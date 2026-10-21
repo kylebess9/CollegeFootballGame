@@ -1091,6 +1091,9 @@ func _resolve_catch() -> void:
 	if not rec.is_up() or rec_dist > CATCH_REACH:
 		_end_incomplete("Pass incomplete, %s can't reach it" % rec.tag())
 		return
+	if ball_to.x > FIELD_LEN or ball_to.y < 0.0 or ball_to.y > FIELD_W:
+		_end_incomplete("Pass incomplete, caught out of bounds")
+		return
 	var marks := 0
 	for d in defenders():
 		if d.is_free() and d.pos.distance_to(rec.pos) <= ZONE_RANGE:
@@ -1120,6 +1123,8 @@ func _resolve_catch() -> void:
 	rec.path_index = 0
 	for d in defenders():
 		d.pursue_at = minf(d.pursue_at, t + d.react_time)
+	if rec.pos.x >= OPP_GOAL:
+		_touchdown(rec)
 
 
 func _start_turnover(new_holder: SimActor) -> void:
@@ -1229,9 +1234,7 @@ func _check_boundaries() -> void:
 		return
 	var c := holder
 	if c.side == SimActor.Side.OFFENSE and c.pos.x >= OPP_GOAL and not (c == qb and qb_in_pocket()):
-		_finish({"kind": "td", "end_x": OPP_GOAL, "turnover": false, "clock_stops": true,
-			"text": "TOUCHDOWN %s!" % c.tag()})
-		_log("TOUCHDOWN!", c.pos, 1, "", "TOUCHDOWN")
+		_touchdown(c)
 		return
 	if c.side == SimActor.Side.DEFENSE and c.pos.x <= OWN_GOAL:
 		_finish({"kind": "def_td", "end_x": OWN_GOAL, "turnover": true, "clock_stops": true,
@@ -1245,6 +1248,12 @@ func _check_boundaries() -> void:
 
 # ---------------------------------------------------------------- finishing
 
+func _touchdown(c: SimActor) -> void:
+	_log("TOUCHDOWN!", c.pos, 1, "", "TOUCHDOWN")
+	_finish({"kind": "td", "end_x": OPP_GOAL, "turnover": false, "clock_stops": true,
+		"text": "TOUCHDOWN %s!" % c.tag()})
+
+
 func _end_tackled(c: SimActor, note: String, oob := false) -> void:
 	if c == null:
 		_end_incomplete("Whistle")
@@ -1253,6 +1262,10 @@ func _end_tackled(c: SimActor, note: String, oob := false) -> void:
 	if turnover:
 		_finish({"kind": "int", "end_x": x, "turnover": true, "clock_stops": true,
 			"text": "Turnover, return ends at the spot"})
+		return
+	# Hit after crossing the goal line still counts: the ball broke the plane.
+	if x >= OPP_GOAL and c.side == SimActor.Side.OFFENSE and not (c == qb and qb_in_pocket()):
+		_touchdown(c)
 		return
 	if x <= OWN_GOAL:
 		_finish({"kind": "safety", "end_x": x, "turnover": false, "clock_stops": true, "text": "SAFETY!"})

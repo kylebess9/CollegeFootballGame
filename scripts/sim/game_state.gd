@@ -76,6 +76,9 @@ func apply_play(res: Dictionary, was_run: bool) -> Array[String]:
 	rerolls[1 - off] = int(res["rerolls_def"])
 	var kind: String = res["kind"]
 	var yards: int = res["yards"]
+	# Safety net: any gain that reaches the end zone is a touchdown.
+	if kind in ["tackle", "oob"] and ball_on + yards >= 100.0:
+		kind = "td"
 	stats[off]["plays"] += 1
 	var runoff := float(res["duration"]) + (6.0 if bool(res["clock_stops"]) else 32.0)
 
