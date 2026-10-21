@@ -27,6 +27,7 @@ const CATCH_REACH := 1.6
 const HANDOFF_TIME := 0.55
 const OPEN_THRESHOLD := 1.8
 const MAX_TIME := 20.0
+const END_LINE_STOP := FIELD_LEN - 1.5 # receivers settle this deep in the end zone
 
 var dice: Dice
 var off_team: Team
@@ -187,6 +188,7 @@ func _assign_route(a: SimActor, route_name: String) -> void:
 	for p in r["points"]:
 		var pt: Vector2 = a.start_pos + Vector2(p.x, p.y * outside)
 		pt.y = clampf(pt.y, 1.5, FIELD_W - 1.5)
+		pt.x = minf(pt.x, END_LINE_STOP)
 		a.path.append(pt)
 	a.path_end = r["end"]
 
@@ -292,6 +294,11 @@ func opponents_of(a: SimActor) -> Array[SimActor]:
 ## Event value meaning "good for this side".
 func _fav(side: int) -> int:
 	return 1 if side == SimActor.Side.OFFENSE else 0
+
+
+## Inside the field of play, end zones included.
+func _in_bounds(p: Vector2) -> bool:
+	return p.x >= 0.0 and p.x <= FIELD_LEN and p.y >= 0.0 and p.y <= FIELD_W
 
 
 func goal_dir(a: SimActor) -> float:
@@ -498,6 +505,7 @@ func _predict(a: SimActor, time: float) -> Vector2:
 	if a.path_end == "go" and remaining > 0.0:
 		p += dir * remaining
 	p.y = clampf(p.y, 0.5, FIELD_W - 0.5)
+	p.x = minf(p.x, END_LINE_STOP)
 	return p
 
 
@@ -721,6 +729,7 @@ func _follow_path(a: SimActor, allow_free: bool) -> Vector2:
 	if a.path_end == "go":
 		var p2 := a.pos + a.path_dir * 5.0
 		p2.y = clampf(p2.y, 1.0, FIELD_W - 1.0)
+		p2.x = minf(p2.x, END_LINE_STOP)
 		return p2
 	return a.pos
 
@@ -1060,13 +1069,16 @@ func _resolve_catch() -> void:
 	if ball_target == null:
 		_end_incomplete("Pass incomplete (thrown away)")
 		return
+	if not _in_bounds(ball_to):
+		_end_incomplete("Pass incomplete, out of bounds")
+		return
 	# A defender can only try to intercept if he gets to the ball before the receiver does.
 	var rec := ball_target
 	var rec_dist := rec.pos.distance_to(ball_to) if rec.is_up() else 99.0
 	var best_d: SimActor = null
 	var best_dist := INF
 	for d in defenders():
-		if not d.is_free():
+		if not d.is_free() or not _in_bounds(d.pos):
 			continue
 		var reach := 1.8 if d.has_skill("Ball Hawk") else 1.2
 		var dist := d.pos.distance_to(ball_to)
@@ -1091,8 +1103,8 @@ func _resolve_catch() -> void:
 	if not rec.is_up() or rec_dist > CATCH_REACH:
 		_end_incomplete("Pass incomplete, %s can't reach it" % rec.tag())
 		return
-	if ball_to.x > FIELD_LEN or ball_to.y < 0.0 or ball_to.y > FIELD_W:
-		_end_incomplete("Pass incomplete, caught out of bounds")
+	if not _in_bounds(rec.pos):
+		_end_incomplete("Pass incomplete, %s is out of bounds" % rec.tag())
 		return
 	var marks := 0
 	for d in defenders():

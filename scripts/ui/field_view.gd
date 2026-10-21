@@ -169,6 +169,7 @@ func _capture_routes() -> void:
 			var dir := (last - before).normalized()
 			var ext := last + dir * 8.0
 			ext.y = clampf(ext.y, 1.0, FIELD_W - 1.0)
+			ext.x = minf(ext.x, PlaySim.END_LINE_STOP)
 			pts.append(ext)
 		_routes.append(pts)
 
