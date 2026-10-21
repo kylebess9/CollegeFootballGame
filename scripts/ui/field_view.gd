@@ -134,9 +134,10 @@ func _draw_markers() -> void:
 	var los_abs := 10.0 + (gs.ball_on if off_right else 100.0 - gs.ball_on)
 	var fd := gs.ball_on + gs.to_go
 	if sim != null and not preview:
-		# During and right after a play keep showing the lines it started from.
+		# During and right after a play keep showing the line of scrimmage it started from.
+		# gs.ball_on/to_go (and so fd) don't change until the play is applied, so the yellow
+		# line-to-gain stays correct and visible the whole time too.
 		los_abs = sim.los if not flip else FIELD_LEN - sim.los
-		fd = -1.0
 	var s := _scale
 	draw_line(_origin + Vector2(los_abs, 0) * s, _origin + Vector2(los_abs, FIELD_W) * s, Color("#3fa9f5"), 3.0)
 	if fd > 0.0 and fd < 100.0:
