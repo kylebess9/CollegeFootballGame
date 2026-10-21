@@ -15,6 +15,10 @@ var preview := false # true while showing the pre-snap lineup
 var popups: Array[Dictionary] = [] # {text, pos (field), color, born}
 var clock := 0.0
 var font: Font
+var hovered: SimActor = null
+
+## Emitted whenever the player under the mouse changes (null when none).
+signal hover_changed(actor: SimActor)
 
 var _scale := 10.0
 var _origin := Vector2.ZERO
@@ -37,7 +41,26 @@ func _process(delta: float) -> void:
 		if clock - float(p["born"]) < POPUP_LIFE:
 			keep.append(p)
 	popups = keep
+	_update_hover()
 	queue_redraw()
+
+
+## Finds whichever player's dot is closest to the mouse, so the side panel can show their
+## card. Works pre-snap and during/after a play; cleared whenever there's nothing to show.
+func _update_hover() -> void:
+	var found: SimActor = null
+	if sim != null and get_global_rect().has_point(get_global_mouse_position()):
+		var mp := get_local_mouse_position()
+		var reach := DOT_R * _scale + 5.0
+		var best := INF
+		for a in sim.actors:
+			var d := to_screen(a.pos).distance_to(mp)
+			if d <= reach and d < best:
+				best = d
+				found = a
+	if found != hovered:
+		hovered = found
+		hover_changed.emit(hovered)
 
 
 func add_popup(text: String, field_pos: Vector2, color: Color) -> void:
@@ -201,6 +224,8 @@ func _draw_players() -> void:
 		draw_arc(p, r, 0, TAU, 20, Color(0, 0, 0, 0.6), 1.5)
 		if a == sim.holder:
 			draw_arc(p, r + 2.5, 0, TAU, 24, Color.WHITE, 2.5)
+		if a == hovered:
+			draw_arc(p, r + 3.5, 0, TAU, 24, Color("#f2b134"), 2.5)
 		if not a.is_up():
 			var d := r * 0.6
 			draw_line(p - Vector2(d, d), p + Vector2(d, d), Color(0, 0, 0, 0.8), 2.0)

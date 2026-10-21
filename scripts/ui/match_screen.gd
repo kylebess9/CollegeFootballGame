@@ -13,7 +13,9 @@ var rng := RandomNumberGenerator.new()
 var me := GameState.HOME
 
 var field: FieldView
+var side_header: Label
 var log_label: RichTextLabel
+var hover_label: RichTextLabel
 var call_title: Label
 var call_hint: Label
 var call_buttons: HFlowContainer
@@ -76,12 +78,14 @@ func _build_ui() -> void:
 	field = FieldView.new()
 	field.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	field.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	field.hover_changed.connect(_on_hover_changed)
 	mid.add_child(field)
 
 	var side := VBoxContainer.new()
 	side.custom_minimum_size = Vector2(390, 0)
 	mid.add_child(side)
-	side.add_child(UiStyle.label("PLAY-BY-PLAY & DICE", 13, UiStyle.MUTED))
+	side_header = UiStyle.label("PLAY-BY-PLAY & DICE", 13, UiStyle.MUTED)
+	side.add_child(side_header)
 	log_label = RichTextLabel.new()
 	log_label.bbcode_enabled = true
 	log_label.scroll_following = true
@@ -89,6 +93,13 @@ func _build_ui() -> void:
 	log_label.add_theme_font_size_override("normal_font_size", 14)
 	log_label.add_theme_font_size_override("bold_font_size", 14)
 	side.add_child(log_label)
+	hover_label = RichTextLabel.new()
+	hover_label.bbcode_enabled = true
+	hover_label.visible = false
+	hover_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	hover_label.add_theme_font_size_override("normal_font_size", 14)
+	hover_label.add_theme_font_size_override("bold_font_size", 14)
+	side.add_child(hover_label)
 
 	root.add_child(_build_call_panel())
 
@@ -201,6 +212,34 @@ func _refresh_scoreboard() -> void:
 
 func _log_line(bb: String) -> void:
 	log_label.append_text(bb + "\n")
+
+
+## Swaps the play-by-play panel for a player's stats and skills while the mouse is over them
+## on the field, and swaps it back as soon as it isn't.
+func _on_hover_changed(actor: SimActor) -> void:
+	if actor == null:
+		hover_label.visible = false
+		log_label.visible = true
+		side_header.text = "PLAY-BY-PLAY & DICE"
+		return
+	hover_label.text = _player_card_bbcode(actor)
+	hover_label.visible = true
+	log_label.visible = false
+	side_header.text = "PLAYER INFO"
+
+
+func _player_card_bbcode(a: SimActor) -> String:
+	var p: FootballPlayer = a.player
+	var team: Team = sim.off_team if a.side == SimActor.Side.OFFENSE else sim.def_team
+	var s := "[color=#f2b134][b]%s[/b][/color]  [color=#8a96a8]%s[/color]\n" % [p.full_name(), team.abbrev]
+	s += "%s · #%d · %s · Overall [color=#f2b134][b]%d[/b][/color]\n\n" % [a.slot, p.number, p.year_label(), p.overall()]
+	for attr in FootballPlayer.ATTRS:
+		s += "[b]%s[/b] (%s): %d\n" % [FootballPlayer.ATTR_NAMES[attr], attr.to_upper(), p.r(attr)]
+	if not p.skills.is_empty():
+		s += "\n[color=#f2b134][b]Skills[/b][/color]\n"
+		for sk in p.skills:
+			s += "[b]%s[/b]: %s\n" % [sk, FootballPlayer.SKILLS[sk]]
+	return s
 
 
 # ---------------------------------------------------------------- game flow
