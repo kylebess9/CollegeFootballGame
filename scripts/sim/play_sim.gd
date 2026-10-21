@@ -49,7 +49,6 @@ var t := 0.0
 var done := false
 var result := {}
 var events: Array[Dictionary] = []
-var rerolls := {SimActor.Side.OFFENSE: 0, SimActor.Side.DEFENSE: 0}
 
 # Ball
 var holder: SimActor = null
@@ -82,7 +81,7 @@ var pending_away := false
 
 
 func setup(offense: Team, defense: Team, off_call: String, def_call: String, ball_on: float, spot_y: float,
-		situation: Dictionary, off_rerolls: int, def_rerolls: int, dice_in: Dice) -> void:
+		situation: Dictionary, dice_in: Dice) -> void:
 	dice = dice_in
 	off_team = offense
 	def_team = defense
@@ -96,8 +95,6 @@ func setup(offense: Team, defense: Team, off_call: String, def_call: String, bal
 	ball_y = clampf(spot_y, HASH_LEFT, HASH_RIGHT)
 	down = int(situation.get("down", 1))
 	to_go = int(situation.get("to_go", 10))
-	rerolls[SimActor.Side.OFFENSE] = off_rerolls
-	rerolls[SimActor.Side.DEFENSE] = def_rerolls
 	run_side = 1 if dice.rng.randf() < 0.5 else -1
 	_build_offense()
 	_build_defense()
@@ -319,8 +316,8 @@ func _log(text: String, at: Vector2, ok: int = -1, detail: String = "", short :=
 	events.append({"t": t, "text": text, "pos": at, "ok": ok, "detail": detail, "short": short})
 
 
-## A Blood Bowl style test: roll a d6, need target or higher. Skills and team re-rolls can save a failure.
-func _test(a: SimActor, target: int, label: String, skill: String = "", team_reroll := false) -> Dictionary:
+## A Blood Bowl style test: roll a d6, need target or higher. A matching skill can save a failure.
+func _test(a: SimActor, target: int, label: String, skill: String = "") -> Dictionary:
 	target = Dice.clamp_target(target)
 	var first := dice.d6()
 	var roll := first
@@ -330,11 +327,6 @@ func _test(a: SimActor, target: int, label: String, skill: String = "", team_rer
 		roll = dice.d6()
 		ok = roll >= target
 		detail += ", %s re-roll %d" % [skill, roll]
-	elif not ok and team_reroll and rerolls[a.side] > 0:
-		rerolls[a.side] -= 1
-		roll = dice.d6()
-		ok = roll >= target
-		detail += ", TEAM RE-ROLL %d (%d left)" % [roll, rerolls[a.side]]
 	return {"ok": ok, "roll": roll, "first": first, "target": target, "detail": detail}
 
 
@@ -1115,14 +1107,12 @@ func _resolve_catch() -> void:
 		mod2 += 1
 	elif ball_quality == "duck":
 		mod2 += 2
-	var air_yards := ball_to.x - los
-	var use_team := down >= 3 or air_yards >= 15.0
 	var label := "Catch (Hands%s%s)" % [
 		", %d defender%s close" % [marks, "" if marks == 1 else "s"] if marks > 0 else "",
 		", off target" if ball_quality != "good" else ""]
 	if defended:
 		label = label.trim_suffix(")") + ", tipped)"
-	var res2 := _test(rec, 7 - rec.r("hnd") + mod2, label, "Soft Hands", use_team)
+	var res2 := _test(rec, 7 - rec.r("hnd") + mod2, label, "Soft Hands")
 	if not res2["ok"]:
 		_end_incomplete("Pass incomplete, dropped by %s" % rec.tag(), res2["detail"])
 		return
@@ -1190,17 +1180,12 @@ func _check_tackles() -> void:
 		assists = mini(assists, 2)
 		var elusive := 1 if c.has_skill("Elusive") else 0
 		var target := 2 + maxi(0, c.r("agi") - d.r("tkl")) / 2 + engaged_pen + dive - assists + elusive
-		var breaking_free := true
-		for o in opps:
-			if o != d and o.is_up() and o.pos.distance_to(c.pos) < 4.0:
-				breaking_free = false
-		var near_goal := (c.pos.x > OPP_GOAL - 12.0) if c.side == SimActor.Side.OFFENSE else (c.pos.x < OWN_GOAL + 12.0)
 		var label := "%s (%s Tackling %d vs Agility %d%s%s%s)" % [
 			"Diving tackle" if dive > 0 else "Tackle", d.slot, d.r("tkl"), c.r("agi"),
 			", %d helping" % assists if assists > 0 else "",
 			", engaged" if engaged_pen > 0 else "",
 			", Elusive" if elusive > 0 else ""]
-		var res := _test(d, target, label, "Sure Tackler", breaking_free or near_goal)
+		var res := _test(d, target, label, "Sure Tackler")
 		# Gang tackle: when help is already making it a 2+, a failed roll gets one more chance.
 		if not res["ok"] and assists > 0 and target <= 2:
 			var r2 := dice.d6()
@@ -1313,7 +1298,5 @@ func _finish(r: Dictionary) -> void:
 	if not r.has("end_y"):
 		r["end_y"] = holder.pos.y if holder != null else ball_y
 	r["duration"] = t
-	r["rerolls_off"] = rerolls[SimActor.Side.OFFENSE]
-	r["rerolls_def"] = rerolls[SimActor.Side.DEFENSE]
 	r["thrown"] = thrown_at >= 0.0
 	result = r

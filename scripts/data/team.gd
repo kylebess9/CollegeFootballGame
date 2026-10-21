@@ -7,8 +7,6 @@ extends Resource
 @export var abbrev := ""
 @export var color := Color.BLUE
 @export var roster: Array[FootballPlayer] = []
-## Team re-rolls available each half, like Blood Bowl. Think of it as coaching quality.
-@export var rerolls := 3
 
 const OFFENSE_SLOTS: Array[String] = ["QB", "RB", "WR1", "WR2", "WR3", "TE", "LT", "LG", "C", "RG", "RT"]
 const DEFENSE_SLOTS: Array[String] = ["DE1", "DT1", "DT2", "DE2", "WILL", "MIKE", "SAM", "CB1", "CB2", "SS", "FS"]

@@ -25,8 +25,6 @@ var clock_label: Label
 var down_label: Label
 var poss_home: Label
 var poss_away: Label
-var rr_home: Label
-var rr_away: Label
 var final_panel: PanelContainer
 
 var sim: PlaySim
@@ -113,8 +111,6 @@ func _build_scoreboard() -> Control:
 	h.add_child(UiStyle.color_chip(home.color, 26))
 	var hv := VBoxContainer.new()
 	hv.add_child(UiStyle.label(home.display_name() + "  (YOU)", 18))
-	rr_home = UiStyle.label("", 13, UiStyle.MUTED)
-	hv.add_child(rr_home)
 	h.add_child(hv)
 	score_home = UiStyle.label("0", 36, UiStyle.TEXT)
 	h.add_child(score_home)
@@ -135,9 +131,6 @@ func _build_scoreboard() -> Control:
 	var an := UiStyle.label(away.display_name() + "  (CPU)", 18)
 	an.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	av.add_child(an)
-	rr_away = UiStyle.label("", 13, UiStyle.MUTED)
-	rr_away.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	av.add_child(rr_away)
 	h.add_child(av)
 	h.add_child(UiStyle.color_chip(away.color, 26))
 	poss_away = UiStyle.label("●", 18, UiStyle.ACCENT)
@@ -204,8 +197,6 @@ func _refresh_scoreboard() -> void:
 	down_label.text = "" if gs.over else "%s ball: %s" % [gs.offense().abbrev, gs.down_text()]
 	poss_home.modulate.a = 1.0 if gs.possession == 0 and not gs.over else 0.0
 	poss_away.modulate.a = 1.0 if gs.possession == 1 and not gs.over else 0.0
-	rr_home.text = "Team re-rolls: %d" % gs.rerolls[0]
-	rr_away.text = "Team re-rolls: %d" % gs.rerolls[1]
 
 
 func _log_line(bb: String) -> void:
@@ -274,7 +265,7 @@ func _begin_snap() -> void:
 func _show_lineup() -> void:
 	var p := PlaySim.new()
 	p.setup(gs.offense(), gs.defense(), "Inside Run", "Cover 3", gs.ball_on, gs.spot_y,
-		gs.situation(), 0, 0, Dice.new(1))
+		gs.situation(), Dice.new(1))
 	if sim != null:
 		sim.dispose()
 	sim = p
@@ -328,7 +319,7 @@ func _start_play() -> void:
 	call_hint.text = "Watching the play..."
 	sim = PlaySim.new()
 	sim.setup(gs.offense(), gs.defense(), pending_off, pending_def, gs.ball_on, gs.spot_y,
-		gs.situation(), gs.rerolls[gs.possession], gs.rerolls[1 - gs.possession], dice)
+		gs.situation(), dice)
 	sim_was_run = Playbook.is_run(pending_off)
 	sim_off_is_me = gs.possession == me
 	field.preview = false

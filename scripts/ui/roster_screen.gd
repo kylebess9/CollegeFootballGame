@@ -25,7 +25,7 @@ func _ready() -> void:
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(spacer)
-	header.add_child(UiStyle.label("Overall %d   |   Team re-rolls %d per half   |   ★ = starter" % [team.team_overall(), team.rerolls], 16, UiStyle.MUTED))
+	header.add_child(UiStyle.label("Overall %d   |   ★ = starter" % team.team_overall(), 16, UiStyle.MUTED))
 	root.add_child(header)
 
 	var body := HBoxContainer.new()
@@ -95,5 +95,4 @@ func _legend_text() -> String:
 	s += "[color=#f2b134][b]SKILLS[/b][/color]\n"
 	for k in FootballPlayer.SKILLS:
 		s += "[b]%s[/b]: %s\n" % [k, FootballPlayer.SKILLS[k]]
-	s += "\n[color=#f2b134][b]TEAM RE-ROLLS[/b][/color]\nUsed automatically on key failed catches and tackles. Refills at halftime."
 	return s

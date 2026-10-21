@@ -17,7 +17,7 @@ func _init() -> void:
 			for i in 90:
 				var sim := PlaySim.new()
 				var spot := 70.0 + (i % 4) * 7.0 # 70, 77, 84, 91
-				sim.setup(a, b, off, de, spot, 26.67, {"down": 1, "to_go": 10}, 0, 0, dice)
+				sim.setup(a, b, off, de, spot, 26.67, {"down": 1, "to_go": 10}, dice)
 				var r := sim.run_to_end()
 				# Every catch and interception must happen inside the field of play.
 				for e in sim.events:

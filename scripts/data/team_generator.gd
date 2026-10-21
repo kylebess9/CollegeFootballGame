@@ -87,7 +87,6 @@ func make_team(school_index: int, color: Color, talent: float = 0.0) -> Team:
 	t.mascot = s[1]
 	t.abbrev = s[2]
 	t.color = color
-	t.rerolls = rng.randi_range(2, 4)
 	var used_numbers := {}
 	for pos in ROSTER_COUNTS:
 		for i in int(ROSTER_COUNTS[pos]):
