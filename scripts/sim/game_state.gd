@@ -16,7 +16,6 @@ var ball_on := 25.0 # yards from the offense's own goal line (0-100)
 var spot_y := FIELD_W * 0.5
 var down := 1
 var to_go := 10
-var rerolls: Array[int] = [3, 3]
 var over := false
 var dice: Dice
 var stats := [
@@ -30,7 +29,6 @@ func _init(home: Team, away: Team, quarter_minutes: float, dice_in: Dice) -> voi
 	quarter_length = quarter_minutes * 60.0
 	clock = quarter_length
 	dice = dice_in
-	rerolls = [home.rerolls, away.rerolls]
 
 
 func offense() -> Team:
@@ -72,8 +70,6 @@ func clock_text() -> String:
 func apply_play(res: Dictionary, was_run: bool) -> Array[String]:
 	var lines: Array[String] = []
 	var off := possession
-	rerolls[off] = int(res["rerolls_off"])
-	rerolls[1 - off] = int(res["rerolls_def"])
 	var kind: String = res["kind"]
 	var yards: int = res["yards"]
 	# Safety net: any gain that reaches the end zone is a touchdown.
@@ -255,7 +251,6 @@ func _run_clock(seconds: float) -> Array[String]:
 		lines.append("--- HALFTIME ---")
 		quarter = 3
 		clock = quarter_length
-		rerolls = [teams[0].rerolls, teams[1].rerolls]
 		lines.append_array(_kickoff(HOME))
 	elif quarter >= 4:
 		over = true

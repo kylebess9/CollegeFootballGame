@@ -17,7 +17,6 @@ Players move automatically based on the play call. Dice settle the key moments:
 | Fumble | A natural 6 tackle forces a roll to hold on |
 
 Ratings are 1-6. Skills (Soft Hands, Pass Rusher, Ball Hawk...) give re-rolls or +1s.
-Team re-rolls are spent automatically on key catches and tackles.
 
 ## Code layout
 - `scripts/data/` players, teams, random team generator

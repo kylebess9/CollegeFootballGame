@@ -18,7 +18,7 @@ func _init() -> void:
 			var s := {"yds": 0.0, "succ": 0, "cmp": 0, "att": 0, "sack": 0, "to": 0, "big": 0, "secs": 0.0}
 			for i in reps:
 				var sim := PlaySim.new()
-				sim.setup(a, b, off, de, 35.0, 26.67, {"down": 1, "to_go": 10}, 0, 0, dice)
+				sim.setup(a, b, off, de, 35.0, 26.67, {"down": 1, "to_go": 10}, dice)
 				var r := sim.run_to_end()
 				var y: int = r["yards"]
 				if r["turnover"]:
@@ -69,8 +69,7 @@ func _init() -> void:
 				continue
 			var dc := CoachAI.pick_defense(gs, rng)
 			var sim := PlaySim.new()
-			sim.setup(gs.offense(), gs.defense(), oc, dc, gs.ball_on, gs.spot_y, gs.situation(),
-				gs.rerolls[gs.possession], gs.rerolls[1 - gs.possession], dice)
+			sim.setup(gs.offense(), gs.defense(), oc, dc, gs.ball_on, gs.spot_y, gs.situation(), dice)
 			gs.apply_play(sim.run_to_end(), Playbook.is_run(oc))
 			sim.dispose()
 		pts += gs.score[0] + gs.score[1]

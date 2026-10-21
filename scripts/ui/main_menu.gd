@@ -84,7 +84,6 @@ func _team_card(caption: String, t: Team) -> Control:
 	h.add_child(v)
 	var stats := VBoxContainer.new()
 	stats.add_child(UiStyle.label("Overall %d" % t.team_overall(), 18, UiStyle.ACCENT))
-	stats.add_child(UiStyle.label("Team re-rolls: %d / half" % t.rerolls, 14, UiStyle.MUTED))
 	h.add_child(stats)
 	panel.add_child(h)
 	return panel
