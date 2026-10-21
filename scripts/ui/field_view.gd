@@ -147,21 +147,39 @@ func _draw_markers() -> void:
 		draw_circle(_origin + Vector2(los_abs, y) * s, s * 0.45, Color("#8b5a2b"))
 
 
-func _draw_routes() -> void:
+## Planned routes are captured once at the snap, so the lines stay fixed while the play
+## develops (players can then be seen breaking off their route, e.g. to go get a thrown ball).
+var _routes_for: PlaySim = null
+var _routes: Array = [] # each entry: PackedVector2Array of field points
+
+
+func _capture_routes() -> void:
+	_routes_for = sim
+	_routes.clear()
 	for a in sim.actors:
-		if a.side != SimActor.Side.OFFENSE:
+		if a.side != SimActor.Side.OFFENSE or a.path.is_empty():
 			continue
-		if not (a.job == "route" or (a.job == "rb_run") or (a.job == "carry" and a.path_index < a.path.size())):
+		if not (a.job == "route" or a.job == "rb_run"):
 			continue
-		var prev := to_screen(a.pos)
-		for i in range(a.path_index, a.path.size()):
-			var p := to_screen(a.path[i])
-			draw_line(prev, p, Color(1, 1, 1, 0.22), 2.0)
-			prev = p
-		if a.job == "route" and a.path_end == "go" and a.path.size() > 0:
-			var last := a.path[a.path.size() - 1]
-			var tip := to_screen(last + a.path_dir * 6.0)
-			draw_line(prev, tip, Color(1, 1, 1, 0.12), 2.0)
+		var pts := PackedVector2Array([a.start_pos])
+		pts.append_array(PackedVector2Array(a.path))
+		if a.job == "route" and a.path_end == "go":
+			var last: Vector2 = a.path[a.path.size() - 1]
+			var before: Vector2 = a.start_pos if a.path.size() == 1 else a.path[a.path.size() - 2]
+			var dir := (last - before).normalized()
+			var ext := last + dir * 8.0
+			ext.y = clampf(ext.y, 1.0, FIELD_W - 1.0)
+			pts.append(ext)
+		_routes.append(pts)
+
+
+func _draw_routes() -> void:
+	if _routes_for != sim:
+		_capture_routes()
+	for pts in _routes:
+		for i in range(1, pts.size()):
+			var alpha := 0.12 if i == pts.size() - 1 and pts.size() > 2 else 0.22
+			draw_line(to_screen(pts[i - 1]), to_screen(pts[i]), Color(1, 1, 1, alpha), 2.0)
 
 
 func _draw_players() -> void:
