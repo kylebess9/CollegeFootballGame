@@ -901,6 +901,14 @@ func _zone_target(d: SimActor) -> Vector2:
 		return _pursue_point(d)
 	if ball_in_air and t >= thrown_at + d.react_time:
 		return ball_to
+	if carrier_live() and not is_run:
+		# The pass was just caught (or the QB scrambled) and this defender hasn't
+		# reacted yet. Hold position instead of hunting for a receiver who's no
+		# longer running a route (job flips to "carry" the instant the ball is
+		# caught) or snapping back to the zone's anchor point -- either of which
+		# can send him the wrong way for a beat, which reads as a glitch rather
+		# than a believable reaction delay.
+		return d.pos
 	if t < d.bite_until:
 		return _bite_point(d)
 	var best: SimActor = null
