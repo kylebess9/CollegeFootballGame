@@ -4,6 +4,7 @@ extends Control
 const MainMenu := preload("res://scripts/ui/main_menu.gd")
 const RosterScreen := preload("res://scripts/ui/roster_screen.gd")
 const MatchScreen := preload("res://scripts/ui/match_screen.gd")
+const PracticeScreen := preload("res://scripts/ui/practice_screen.gd")
 
 var my_team: Team
 var cpu_team: Team
@@ -56,3 +57,9 @@ func show_match() -> void:
 	var m := MatchScreen.new()
 	m.main = self
 	_swap(m)
+
+
+func show_practice() -> void:
+	var p := PracticeScreen.new()
+	p.main = self
+	_swap(p)
