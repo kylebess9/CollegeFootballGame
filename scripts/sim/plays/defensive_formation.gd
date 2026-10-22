@@ -23,6 +23,11 @@ func add_play(play: DefensivePlay) -> DefensivePlay:
 	return play
 
 
+func remove_play(play: DefensivePlay) -> void:
+	plays.erase(play)
+	play.formation = null
+
+
 func spot(slot: String) -> FormationSpot:
 	for s in spots:
 		if s.slot == slot:

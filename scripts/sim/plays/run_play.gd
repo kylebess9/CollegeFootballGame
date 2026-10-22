@@ -4,6 +4,9 @@ extends OffensivePlay
 
 const INSIDE := "inside"
 const OUTSIDE := "outside"
+## Every run path, in the order the editor lists them. Add new paths here (and teach
+## PlaySim._build_offense how to run them).
+const PATHS: Array[String] = [INSIDE, OUTSIDE]
 
 @export var run_path := INSIDE
 
@@ -22,8 +25,8 @@ static func make(play_name: String, desc: String, path: String) -> RunPlay:
 
 func validate() -> Array[String]:
 	var errs := super()
-	if run_path != INSIDE and run_path != OUTSIDE:
-		errs.append("%s: run_path must be inside or outside" % name)
+	if not run_path in PATHS:
+		errs.append("%s: run_path must be one of %s" % [name, ", ".join(PATHS)])
 	if formation != null and not formation.has_slot("RB"):
 		errs.append("%s is a run but %s has no RB" % [name, formation.name])
 	return errs

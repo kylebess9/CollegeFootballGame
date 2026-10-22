@@ -7,6 +7,12 @@ extends OffensivePlay
 ##   routes      - slot -> Route for everyone running a pattern; other skill players block
 ##   protect     - slots kept in to block
 ##   reads       - the QB's progression, in order
+##
+## The editor changes a player's job with set_route() / set_block(), which keep routes,
+## protect and reads consistent with each other.
+
+## What job() returns for a player who isn't running a route.
+const BLOCK := "block"
 
 @export var drop := 7.0
 @export var read_start := 1.3
@@ -32,6 +38,42 @@ static func make(play_name: String, desc: String, drop_yds: float, read_at: floa
 	p.protect = play_protect
 	p.reads = play_reads
 	return p
+
+
+## A new pass play with every receiver (WR/TE) running a go route and everyone else
+## blocking, so it's legal from the start and the user edits from there.
+static func blank(play_name: String, fake: bool, f: OffensiveFormation) -> PassPlay:
+	var p := PassPlay.new()
+	p.name = play_name
+	p.play_action = fake
+	p.formation = f
+	for s in f.spots:
+		if s.position in ["WR", "TE"] and f.is_eligible(s.slot):
+			p.set_route(s.slot, Playbook.route("go"))
+		elif f.is_eligible(s.slot):
+			p.set_block(s.slot)
+	return p
+
+
+## The name of the route this slot runs, or BLOCK.
+func job(slot: String) -> String:
+	return routes[slot].name if routes.has(slot) else BLOCK
+
+
+## Sends a player out on a route. New route runners are added to the end of the QB's reads.
+func set_route(slot: String, r: Route) -> void:
+	routes[slot] = r
+	protect.erase(slot)
+	if not slot in reads:
+		reads.append(slot)
+
+
+## Keeps a player in to block.
+func set_block(slot: String) -> void:
+	routes.erase(slot)
+	reads.erase(slot)
+	if not slot in protect:
+		protect.append(slot)
 
 
 func validate() -> Array[String]:

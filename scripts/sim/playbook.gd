@@ -4,11 +4,22 @@ extends Resource
 ## (each holding its coverages), and the special teams kicks.
 ##
 ## Plays are data, not code. make_default() builds the stock playbook every team uses for
-## now; custom playbooks can be built the same way (or saved as resources) later.
-## Play names must be unique within a playbook, since calls are made by name.
+## now. make_offense() / make_defense() start the one-sided playbooks the user builds in the
+## playbook editor (saved by PlaybookStore). Play names must be unique within a playbook,
+## since calls are made by name.
+##
+## Formations come in "packages": a formation plus its stock plays. offense_packages() and
+## defense_packages() list them; add a new formation there and it becomes available to
+## every new playbook.
 
 const SPECIAL_PUNT := "Punt"
 const SPECIAL_FG := "Field Goal"
+
+## What a playbook holds. COMBINED (the stock playbook) has both sides; the editor builds
+## one-sided ones.
+const COMBINED := ""
+const OFFENSE := "offense"
+const DEFENSE := "defense"
 
 ## Stock route tree, shared by every playbook. See Route for the point format.
 const ROUTES := {
@@ -25,7 +36,26 @@ const ROUTES := {
 	"swing": {"points": [Vector2(-1, 4), Vector2(1, 9)], "end": "stop"},
 }
 
+## Stock zones the editor offers a defender: name -> [depth, spot, radius, width, yards].
+## See Zone for what each field means.
+const ZONES := {
+	"Deep Third Left": [Zone.Depth.DEEP, Zone.Spot.LEFT, 9.0, 0.66, 17.0],
+	"Deep Third Right": [Zone.Depth.DEEP, Zone.Spot.RIGHT, 9.0, 0.66, 17.0],
+	"Deep Middle": [Zone.Depth.DEEP, Zone.Spot.CENTER, 10.0, 0.0, 19.0],
+	"Deep Half Left": [Zone.Depth.DEEP, Zone.Spot.LEFT, 11.0, 0.46, 17.0],
+	"Deep Half Right": [Zone.Depth.DEEP, Zone.Spot.RIGHT, 11.0, 0.46, 17.0],
+	"Hook Left": [Zone.Depth.INTERMEDIATE, Zone.Spot.LEFT, 5.0, 0.15, 7.0],
+	"Hook Right": [Zone.Depth.INTERMEDIATE, Zone.Spot.RIGHT, 5.0, 0.15, 7.0],
+	"Middle Hole": [Zone.Depth.INTERMEDIATE, Zone.Spot.CENTER, 5.0, 0.0, 10.0],
+	"Curl Flat Left": [Zone.Depth.SHALLOW, Zone.Spot.LEFT, 6.0, 0.375, 6.0],
+	"Curl Flat Right": [Zone.Depth.SHALLOW, Zone.Spot.RIGHT, 6.0, 0.375, 6.0],
+	"Flat Left": [Zone.Depth.SHALLOW, Zone.Spot.LEFT, 6.0, 0.74, 5.0],
+	"Flat Right": [Zone.Depth.SHALLOW, Zone.Spot.RIGHT, 6.0, 0.74, 5.0],
+	"Short Middle": [Zone.Depth.SHALLOW, Zone.Spot.CENTER, 6.0, 0.0, 6.0],
+}
+
 @export var name := ""
+@export var kind := COMBINED
 @export var offensive_formations: Array[OffensiveFormation] = []
 @export var defensive_formations: Array[DefensiveFormation] = []
 @export var kicks: Array[KickPlay] = []
@@ -37,6 +67,39 @@ static func route(route_name: String) -> Route:
 	var pts: Array[Vector2] = []
 	pts.assign(r["points"])
 	return Route.make(route_name, pts, r["end"])
+
+
+static func route_names() -> Array[String]:
+	var out: Array[String] = []
+	out.assign(ROUTES.keys())
+	return out
+
+
+## A fresh copy of a stock zone.
+static func zone(zone_name: String) -> Zone:
+	var z: Array = ZONES[zone_name]
+	return Zone.make(zone_name, z[0], z[1], z[2], z[3], z[4])
+
+
+static func zone_names() -> Array[String]:
+	var out: Array[String] = []
+	out.assign(ZONES.keys())
+	return out
+
+
+## Plays only hold a weak link back to their formation, and that link isn't saved. Call
+## this after loading a playbook from disk.
+func link_plays() -> void:
+	for f in offensive_formations:
+		for p in f.plays:
+			p.formation = f
+	for f in defensive_formations:
+		for p in f.plays:
+			p.formation = f
+
+
+func has_play(play_name: String) -> bool:
+	return offense_play(play_name) != null or defense_play(play_name) != null or is_kick(play_name)
 
 
 # ---------------------------------------------------------------- lookups
@@ -111,7 +174,7 @@ func validate() -> Array[String]:
 		if seen.has(n):
 			errs.append("Two plays are named %s" % n)
 		seen[n] = true
-	if not is_kick(SPECIAL_PUNT) or not is_kick(SPECIAL_FG):
+	if kind != DEFENSE and (not is_kick(SPECIAL_PUNT) or not is_kick(SPECIAL_FG)):
 		errs.append("%s needs a Punt and a Field Goal" % name)
 	return errs
 
@@ -121,14 +184,48 @@ func validate() -> Array[String]:
 static func make_default() -> Playbook:
 	var pb := Playbook.new()
 	pb.name = "Standard"
-	pb.offensive_formations.append(_pistol())
-	pb.defensive_formations.append(_base_43())
-	pb.defensive_formations.append(_box_43())
-	pb.kicks.append(KickPlay.make(SPECIAL_PUNT, KickPlay.PUNT,
-		"Kick it away. Distance = 34 + 2d6 yards, adjusted by your kicker's Kicking rating."))
-	pb.kicks.append(KickPlay.make(SPECIAL_FG, KickPlay.FIELD_GOAL,
-		"Needs the shown number or better on a d6. Longer kicks are harder; a better kicker lowers the target."))
+	pb.offensive_formations.assign(offense_packages())
+	pb.defensive_formations.assign(defense_packages())
+	pb.kicks.assign(_stock_kicks())
 	return pb
+
+
+## A new offensive playbook: every stock offensive package, plus the kicks.
+static func make_offense(playbook_name: String) -> Playbook:
+	var pb := Playbook.new()
+	pb.name = playbook_name
+	pb.kind = OFFENSE
+	pb.offensive_formations.assign(offense_packages())
+	pb.kicks.assign(_stock_kicks())
+	return pb
+
+
+## A new defensive playbook: every stock defensive package.
+static func make_defense(playbook_name: String) -> Playbook:
+	var pb := Playbook.new()
+	pb.name = playbook_name
+	pb.kind = DEFENSE
+	pb.defensive_formations.assign(defense_packages())
+	return pb
+
+
+## Fresh copies of every stock offensive formation, each with its plays.
+static func offense_packages() -> Array[OffensiveFormation]:
+	return [_pistol()]
+
+
+## Fresh copies of every stock defensive formation, each with its calls.
+static func defense_packages() -> Array[DefensiveFormation]:
+	return [_base_43(), _box_43()]
+
+
+static func _stock_kicks() -> Array[KickPlay]:
+	return [
+		KickPlay.make(SPECIAL_PUNT, KickPlay.PUNT,
+			"Kick it away. Distance = 34 + 2d6 yards, adjusted by your kicker's Kicking rating."),
+		KickPlay.make(SPECIAL_FG, KickPlay.FIELD_GOAL,
+			"Needs the shown number or better on a d6. Longer kicks are harder; a better kicker lowers the target."),
+	]
 
 
 ## QB four yards behind the center with the RB behind him; WR1 and the slot (WR3) to the

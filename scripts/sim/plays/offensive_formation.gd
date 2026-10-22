@@ -11,6 +11,9 @@ const LINE_DEPTH := 1.0
 const SNAP_LANE := 0.5
 
 @export var name := ""
+## The player who takes the snap from the center. Everyone else can be given a route or a
+## block by a play.
+@export var snap_slot := "QB"
 @export var spots: Array[FormationSpot] = []
 @export var plays: Array[OffensivePlay] = []
 
@@ -37,6 +40,26 @@ func spot(slot: String) -> FormationSpot:
 
 func has_slot(slot: String) -> bool:
 	return spot(slot) != null
+
+
+func remove_play(play: OffensivePlay) -> void:
+	plays.erase(play)
+	play.formation = null
+
+
+## Every slot except the snap taker, in lineup order.
+func non_snap_slots() -> Array[String]:
+	var out: Array[String] = []
+	for s in spots:
+		if s.slot != snap_slot:
+			out.append(s.slot)
+	return out
+
+
+## Whether this slot may run a route: anyone but the snap taker and the offensive linemen.
+func is_eligible(slot: String) -> bool:
+	var s := spot(slot)
+	return s != null and slot != snap_slot and s.position != "OL"
 
 
 func on_line(s: FormationSpot) -> bool:
@@ -70,13 +93,13 @@ func validate() -> Array[String]:
 	if spots.size() - line > MAX_IN_BACKFIELD:
 		errs.append("%s has %d players in the backfield, at most %d allowed" % [name, spots.size() - line, MAX_IN_BACKFIELD])
 	var c := center_spot()
-	var qb := spot("QB")
+	var qb := spot(snap_slot)
 	if c == null:
 		errs.append("%s has no center on the line" % name)
 	elif qb == null:
-		errs.append("%s has no QB" % name)
+		errs.append("%s has no %s to take the snap" % [name, snap_slot])
 	elif absf(qb.offset.y - c.offset.y) > SNAP_LANE or qb.offset.x >= c.offset.x:
-		errs.append("%s needs the QB lined up directly behind the center to take the snap" % name)
+		errs.append("%s needs the %s lined up directly behind the center to take the snap" % [name, snap_slot])
 	for p in plays:
 		errs.append_array(p.validate())
 	return errs
