@@ -65,6 +65,12 @@ func _ready() -> void:
 	play.pressed.connect(main.show_match)
 	col.add_child(play)
 
+	var practice := UiStyle.button("PRACTICE MODE")
+	practice.tooltip_text = "No clock, no score. Call a play and a coverage, watch it develop, and run it again from the same spot."
+	practice.custom_minimum_size = Vector2(0, 44)
+	practice.pressed.connect(main.show_practice)
+	col.add_child(practice)
+
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
 	var b1 := UiStyle.button("My Roster")
