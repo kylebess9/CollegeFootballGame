@@ -12,6 +12,7 @@ var gs: GameState
 var sim: PlaySim
 var flip := false
 var preview := false # true while showing the pre-snap lineup
+var ghost_routes := false # with preview: overlay the lined-up play's routes as a faint ghost
 var popups: Array[Dictionary] = [] # {text, pos (field), color, born}
 var clock := 0.0
 var font: Font
@@ -101,6 +102,8 @@ func _draw() -> void:
 	if sim != null:
 		if not preview:
 			_draw_routes()
+		elif ghost_routes:
+			_draw_ghost_routes()
 		_draw_players()
 		if not preview:
 			_draw_ball()
@@ -187,7 +190,15 @@ var _routes: Array = [] # each entry: PackedVector2Array of field points
 
 func _capture_routes() -> void:
 	_routes_for = sim
-	_routes.clear()
+	_routes = _route_lines(false)
+
+
+## One PackedVector2Array of field points per route runner / ball carrier. For the ghost
+## preview, a designed run is extended a few yards upfield (past it the back is on his own),
+## and the RB's path is also added mirrored across the ball, since which side he goes to is
+## a coin flip at the snap.
+func _route_lines(ghost: bool) -> Array:
+	var lines := []
 	for a in sim.actors:
 		if a.side != SimActor.Side.OFFENSE or a.path.is_empty():
 			continue
@@ -203,7 +214,15 @@ func _capture_routes() -> void:
 			ext.y = clampf(ext.y, 1.0, FIELD_W - 1.0)
 			ext.x = minf(ext.x, PlaySim.END_LINE_STOP)
 			pts.append(ext)
-		_routes.append(pts)
+		elif ghost and a.job == "rb_run":
+			pts.append(pts[pts.size() - 1] + Vector2(4.0, 0))
+		lines.append(pts)
+		if ghost and a.slot == "RB":
+			var flipped := PackedVector2Array()
+			for p in pts:
+				flipped.append(Vector2(p.x, clampf(2.0 * sim.ball_y - p.y, 1.0, FIELD_W - 1.0)))
+			lines.append(flipped)
+	return lines
 
 
 func _draw_routes() -> void:
@@ -213,6 +232,29 @@ func _draw_routes() -> void:
 		for i in range(1, pts.size()):
 			var alpha := 0.12 if i == pts.size() - 1 and pts.size() > 2 else 0.22
 			draw_line(to_screen(pts[i - 1]), to_screen(pts[i]), Color(1, 1, 1, alpha), 2.0)
+
+
+## Pre-snap preview of a play being hovered in the call menu: dashed translucent lines
+## with an arrowhead, so the user can see the design before committing to it.
+var _ghost_for: PlaySim = null
+var _ghost: Array = []
+
+
+func _draw_ghost_routes() -> void:
+	if _ghost_for != sim:
+		_ghost_for = sim
+		_ghost = _route_lines(true)
+	var col := Color(1, 1, 0.75, 0.7)
+	var dash := maxf(4.0, _scale * 0.8)
+	for pts in _ghost:
+		for i in range(1, pts.size()):
+			draw_dashed_line(to_screen(pts[i - 1]), to_screen(pts[i]), col, 2.5, dash)
+		var tip := to_screen(pts[pts.size() - 1])
+		var dir := (tip - to_screen(pts[pts.size() - 2])).normalized()
+		var side := Vector2(-dir.y, dir.x)
+		var k := maxf(6.0, _scale * 1.1)
+		draw_colored_polygon(PackedVector2Array([tip, tip - dir * k + side * k * 0.5,
+			tip - dir * k - side * k * 0.5]), col)
 
 
 func _draw_players() -> void:
