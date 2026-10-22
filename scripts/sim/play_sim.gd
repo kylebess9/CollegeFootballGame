@@ -34,8 +34,9 @@ var off_team: Team
 var def_team: Team
 var off_name := ""
 var def_name := ""
-var off_play: Dictionary
-var def_play: Dictionary
+var off_play: OffensivePlay
+var def_play: DefensivePlay
+var pass_play: PassPlay # off_play as a pass, null on runs
 var is_run := false
 var play_action := false
 var los := 35.0
@@ -80,29 +81,31 @@ var pending_hurried := false
 var pending_away := false
 
 
-func setup(offense: Team, defense: Team, off_call: String, def_call: String, ball_on: float, spot_y: float,
-		situation: Dictionary, dice_in: Dice) -> void:
+func setup(offense: Team, defense: Team, off_call: OffensivePlay, def_call: DefensivePlay, ball_on: float,
+		spot_y: float, situation: Dictionary, dice_in: Dice) -> void:
 	dice = dice_in
 	off_team = offense
 	def_team = defense
-	off_name = off_call
-	def_name = def_call
-	off_play = Playbook.OFFENSE[off_call]
-	def_play = Playbook.DEFENSE[def_call]
-	is_run = off_play["type"] == "run"
-	play_action = bool(off_play.get("play_action", false))
+	off_play = off_call
+	def_play = def_call
+	off_name = off_call.name
+	def_name = def_call.name
+	is_run = off_play.is_run()
+	pass_play = null if is_run else off_play as PassPlay
+	play_action = pass_play != null and pass_play.play_action
 	los = OWN_GOAL + ball_on
 	ball_y = clampf(spot_y, HASH_LEFT, HASH_RIGHT)
 	down = int(situation.get("down", 1))
 	to_go = int(situation.get("to_go", 10))
 	run_side = 1 if dice.rng.randf() < 0.5 else -1
-	_build_offense()
-	_build_defense()
+	_build_offense(off_play)
+	_build_defense(def_play)
+	_assign_blocks()
 	qb = slots["O:QB"]
 	holder = qb
 	ball_pos = qb.pos
 	if not is_run:
-		qb_set = Vector2(los - float(off_play["drop"]), ball_y)
+		qb_set = Vector2(los - pass_play.drop, ball_y)
 
 
 # ---------------------------------------------------------------- setup
@@ -126,131 +129,127 @@ func _clamp_y(y: float) -> float:
 	return clampf(y, 3.0, FIELD_W - 3.0)
 
 
-func _build_offense() -> void:
+## The starter the depth chart lists for this spot's slot, or else the best player at the
+## spot's position who isn't already on the field.
+func _player_for(team: Team, dc: Dictionary, spot: FormationSpot, used: Dictionary) -> FootballPlayer:
+	if dc.has(spot.slot) and not used.has(dc[spot.slot]):
+		return dc[spot.slot]
+	for p in team.players_at(spot.position):
+		if not used.has(p):
+			return p
+	push_error("%s has nobody left to play %s (%s)" % [team.school, spot.slot, spot.position])
+	return null
+
+
+## Lines the offense up in the play's formation and gives everyone their job. Blocking
+## targets are handed out later, by _assign_blocks, once the defense is on the field.
+func _build_offense(play: OffensivePlay) -> void:
 	var dc := off_team.depth_chart()
 	var c := ball_y
 	var O := SimActor.Side.OFFENSE
-	_add(off_team, O, "C", dc["C"], Vector2(los - 0.6, c))
-	_add(off_team, O, "LG", dc["LG"], Vector2(los - 0.7, c - 1.4))
-	_add(off_team, O, "RG", dc["RG"], Vector2(los - 0.7, c + 1.4))
-	_add(off_team, O, "LT", dc["LT"], Vector2(los - 0.9, c - 2.8))
-	_add(off_team, O, "RT", dc["RT"], Vector2(los - 0.9, c + 2.8))
-	_add(off_team, O, "TE", dc["TE"], Vector2(los - 0.9, c + 4.3))
-	_add(off_team, O, "QB", dc["QB"], Vector2(los - 4.0, c))
-	_add(off_team, O, "RB", dc["RB"], Vector2(los - 6.5, c))
-	var wr1y := _clamp_y(c - 13.0)
-	_add(off_team, O, "WR1", dc["WR1"], Vector2(los - 0.8, wr1y))
-	_add(off_team, O, "WR3", dc["WR3"], Vector2(los - 1.5, (wr1y + c) * 0.5 + 0.5))
-	_add(off_team, O, "WR2", dc["WR2"], Vector2(los - 1.5, _clamp_y(c + 15.0)))
-
-	var line_blocks := {"LT": "DE1", "LG": "DT1", "RG": "DT2", "RT": "DE2"}
-	for s in line_blocks:
-		var a: SimActor = slots["O:" + s]
-		a.job = "block"
-		a.block_target = null # resolved after defense exists
-	slots["O:C"].job = "block"
-	slots["O:QB"].job = "qb"
+	var used := {}
+	for spot in play.formation.spots:
+		var p := _player_for(off_team, dc, spot, used)
+		used[p] = true
+		var a := _add(off_team, O, spot.slot, p, Vector2(los + spot.offset.x, _clamp_y(c + spot.offset.y)))
+		a.job = "qb" if spot.slot == "QB" else "block"
 
 	if is_run:
 		var rb: SimActor = slots["O:RB"]
 		rb.job = "rb_run"
 		var s := float(run_side)
-		if off_play["run_path"] == "inside":
+		if (play as RunPlay).run_path == RunPlay.INSIDE:
 			rb.path = [Vector2(los - 1.5, c + s * 2.0), Vector2(los + 2.0, c + s * 2.5)]
 		else:
 			rb.path = [Vector2(los - 3.5, c + s * 7.0), Vector2(los + 0.5, c + s * 11.0)]
 		rb.path_end = "free"
-		for s2 in ["TE", "WR1", "WR2", "WR3"]:
-			slots["O:" + s2].job = "block"
 	else:
-		var routes: Dictionary = off_play["routes"]
-		for s2 in ["TE", "WR1", "WR2", "WR3", "RB"]:
-			var a: SimActor = slots["O:" + s2]
-			if routes.has(s2):
-				_assign_route(a, routes[s2])
-			else:
-				a.job = "block"
+		var routes := (play as PassPlay).routes
+		for slot in routes:
+			_assign_route(slots["O:" + slot], routes[slot])
 		if play_action:
 			# RB carries out the fake, then picks up blitzers.
 			slots["O:RB"].job = "fake"
 
 
-func _assign_route(a: SimActor, route_name: String) -> void:
-	var r: Dictionary = Playbook.ROUTES[route_name]
+func _assign_route(a: SimActor, r: Route) -> void:
 	var outside := 1.0 if a.start_pos.y >= ball_y else -1.0
 	if a.slot == "RB":
 		outside = float(run_side)
 	a.job = "route"
 	a.path.clear()
-	for p in r["points"]:
+	for p in r.points:
 		var pt: Vector2 = a.start_pos + Vector2(p.x, p.y * outside)
 		pt.y = clampf(pt.y, 1.5, FIELD_W - 1.5)
 		pt.x = minf(pt.x, END_LINE_STOP)
 		a.path.append(pt)
-	a.path_end = r["end"]
+	a.path_end = r.end
 
 
-func _build_defense() -> void:
+## Pass catchers (WR/TE) split out to one side, widest first. side is -1 for the offense's
+## left, 1 for its right.
+func _receivers_on(side: int) -> Array[SimActor]:
+	var out: Array[SimActor] = []
+	for o in offense():
+		if o.player.position in ["WR", "TE"] and signf(o.pos.y - ball_y) == side:
+			out.append(o)
+	out.sort_custom(func(a: SimActor, b: SimActor) -> bool:
+		return absf(a.pos.y - ball_y) > absf(b.pos.y - ball_y))
+	return out
+
+
+## Where a defensive spot lines up across the field: over a receiver when it has an align
+## ("left_1" = widest receiver on the left), otherwise relative to the ball. If there's no
+## such receiver, the defender lines up 12 yards outside the ball on that side instead.
+func _align_y(spot: FormationSpot) -> float:
+	if spot.align == "":
+		return ball_y + spot.offset.y
+	var parts := spot.align.split("_")
+	var side := -1 if parts[0] == "left" else 1
+	var rank := int(parts[1]) if parts.size() > 1 else 1
+	var recs := _receivers_on(side)
+	if rank >= 1 and rank <= recs.size():
+		return recs[rank - 1].pos.y + spot.offset.y
+	return ball_y + side * 12.0 + spot.offset.y
+
+
+## Lines the defense up in the call's formation and hands out assignments. Man defenders, in
+## the call's order, each pick up the closest receiver nobody is covering yet (unless the
+## call names a target).
+func _build_defense(play: DefensivePlay) -> void:
 	var dc := def_team.depth_chart()
-	var c := ball_y
 	var D := SimActor.Side.DEFENSE
-	var run_first := bool(def_play.get("run_first", false))
-	_add(def_team, D, "DE1", dc["DE1"], Vector2(los + 1.0, c - 4.0))
-	_add(def_team, D, "DT1", dc["DT1"], Vector2(los + 1.0, c - 1.0))
-	_add(def_team, D, "DT2", dc["DT2"], Vector2(los + 1.0, c + 1.2))
-	_add(def_team, D, "DE2", dc["DE2"], Vector2(los + 1.0, c + 3.7))
-	_add(def_team, D, "WILL", dc["WILL"], Vector2(los + 5.0, c - 4.0))
-	_add(def_team, D, "MIKE", dc["MIKE"], Vector2(los + 5.0, c))
-	_add(def_team, D, "SAM", dc["SAM"], Vector2(los + 4.5, c + 4.5))
-	var wr1: SimActor = slots["O:WR1"]
-	var wr2: SimActor = slots["O:WR2"]
-	var wr3: SimActor = slots["O:WR3"]
-	_add(def_team, D, "CB1", dc["CB1"], Vector2(los + 6.0, wr1.pos.y))
-	_add(def_team, D, "CB2", dc["CB2"], Vector2(los + 6.0, wr2.pos.y))
-	if run_first:
-		_add(def_team, D, "SS", dc["SS"], Vector2(los + 5.5, c - 6.5))
-	else:
-		_add(def_team, D, "SS", dc["SS"], Vector2(los + 8.0, wr3.pos.y + 1.0))
-	_add(def_team, D, "FS", dc["FS"], Vector2(los + 13.0, c))
+	var used := {}
+	for spot in play.formation.spots:
+		var p := _player_for(def_team, dc, spot, used)
+		used[p] = true
+		var a := _add(def_team, D, spot.slot, p, Vector2(los + spot.offset.x, _clamp_y(_align_y(spot))))
+		if spot.position == "DL":
+			a.job = "rush"
 
-	for s in ["DE1", "DT1", "DT2", "DE2"]:
-		slots["D:" + s].job = "rush"
-	var assign: Dictionary = def_play["assign"]
-	for s in assign:
-		var a: SimActor = slots["D:" + s]
-		var info: Dictionary = assign[s]
-		match info["type"]:
-			"man":
+	var covered := {}
+	for info in play.assignments:
+		var a: SimActor = slots["D:" + info.slot]
+		match info.type:
+			CoverageAssignment.MAN:
 				a.job = "man"
-				a.man_target = slots["O:" + info["target"]]
+				a.man_target = _pick_man(a, info.target, covered)
+				if a.man_target != null:
+					covered[a.man_target] = true
 				if a.has_skill("Shutdown"):
 					a.react_time = maxf(0.05, a.react_time - 0.12)
-			"zone":
+			CoverageAssignment.ZONE:
 				a.job = "zone"
-				var zy: float
-				if info.has("fy"):
-					zy = FIELD_W * float(info["fy"])
-				else:
-					zy = c + float(info["dy"])
-				a.zone_center = Vector2(los + float(info["dx"]), _clamp_y(zy))
-				a.zone_radius = float(info["r"])
-			"blitz":
+				var zc := info.zone.center(los, ball_y)
+				a.zone_center = Vector2(zc.x, _clamp_y(zc.y))
+				a.zone_radius = info.zone.radius
+			CoverageAssignment.BLITZ:
 				a.job = "rush"
-		if run_first and s in ["WILL", "MIKE", "SAM", "SS"]:
+		# Run-first calls send everyone but the deep defenders at the line.
+		if play.run_first and not (info.type == CoverageAssignment.ZONE and info.zone.is_deep()):
 			a.run_first = true
 
-	# Offensive blocking assignments
-	var O := "O:"
-	slots[O + "LT"].block_target = slots["D:DE1"]
-	slots[O + "LG"].block_target = slots["D:DT1"]
-	slots[O + "RG"].block_target = slots["D:DT2"]
-	slots[O + "RT"].block_target = slots["D:DE2"]
 	if is_run:
-		slots[O + "C"].block_target = slots["D:MIKE"]
-		slots[O + "TE"].block_target = slots["D:SAM"]
-		slots[O + "WR1"].block_target = slots["D:CB1"]
-		slots[O + "WR2"].block_target = slots["D:CB2"]
-		slots[O + "WR3"].block_target = slots["D:SS"]
 		# Defenders figure out it's a run after the handoff, depending on Awareness.
 		for d in defenders():
 			d.pursue_at = HANDOFF_TIME + d.react_time * 1.5
@@ -260,6 +259,68 @@ func _build_defense() -> void:
 		for d in defenders():
 			if d.run_first:
 				d.bite_until = 0.9 + d.react_time
+
+
+## A man defender's receiver: the named target if the call gives one and he's free, else the
+## closest uncovered receiver (anyone but the QB and the offensive line).
+func _pick_man(d: SimActor, target: String, covered: Dictionary) -> SimActor:
+	if target != "" and slots.has("O:" + target) and not covered.has(slots["O:" + target]):
+		return slots["O:" + target]
+	var best: SimActor = null
+	var bd := INF
+	for o in offense():
+		if o.player.position in ["QB", "OL"] or covered.has(o):
+			continue
+		var dist := o.pos.distance_to(d.pos)
+		if dist < bd:
+			bd = dist
+			best = o
+	return best
+
+
+## Initial blocking assignments, made once both teams are lined up: the offensive line first,
+## each lineman taking the closest defender nobody else has (closest pairs first). On a pass
+## the line only looks at the rushers. On a run the other blockers (TE, receivers) then take
+## the defender lined up most directly across from them, so a receiver stalks the man over
+## him rather than turning inside to the nearest linebacker. Anyone left without a target
+## finds one during the play.
+func _assign_blocks() -> void:
+	var line: Array[SimActor] = []
+	var others: Array[SimActor] = []
+	for o in offense():
+		if o.job != "block":
+			continue
+		if o.player.position == "OL":
+			line.append(o)
+		elif is_run:
+			others.append(o)
+	var open: Array[SimActor] = []
+	for d in defenders():
+		if is_run or d.job == "rush":
+			open.append(d)
+	_pair_closest(line, open, false)
+	_pair_closest(others, open, true)
+
+
+## Greedily pairs blockers with defenders, closest pair first: by straight-line distance, or
+## with across = true by how far apart they are across the field. Paired defenders are
+## removed from `open`.
+func _pair_closest(blockers: Array[SimActor], open: Array[SimActor], across: bool) -> void:
+	var pairs := []
+	for b in blockers:
+		for d in open:
+			var gap := absf(b.pos.y - d.pos.y) if across else b.pos.distance_to(d.pos)
+			pairs.append([gap, b, d])
+	pairs.sort_custom(func(x: Array, y: Array) -> bool: return x[0] < y[0])
+	var done_b := {}
+	for pr in pairs:
+		var b: SimActor = pr[1]
+		var d: SimActor = pr[2]
+		if done_b.has(b) or not open.has(d):
+			continue
+		b.block_target = d
+		done_b[b] = true
+		open.erase(d)
 
 
 # ---------------------------------------------------------------- helpers
@@ -409,13 +470,13 @@ func _qb_decide() -> void:
 	under_pressure = threat_dist < 1.3 + 0.3 * qb.r("awr")
 
 	if qb_state == "drop":
-		if qb.pos.distance_to(qb_set) < 0.4 and t >= float(off_play["read_start"]):
+		if qb.pos.distance_to(qb_set) < 0.4 and t >= pass_play.read_start:
 			qb_state = "read"
 			_start_read(0)
 		elif not under_pressure:
 			return
 
-	var reads: Array = off_play["reads"]
+	var reads := pass_play.reads
 	if under_pressure:
 		var best := _best_option(20.0)
 		if best["actor"] != null and float(best["open"]) >= OPEN_THRESHOLD - 0.8:
@@ -525,7 +586,7 @@ func _openness(rec: SimActor) -> float:
 func _best_option(max_dist: float = 999.0) -> Dictionary:
 	var best_actor: SimActor = null
 	var best_open := -99.0
-	for s in off_play["reads"]:
+	for s in pass_play.reads:
 		var a: SimActor = slots["O:" + s]
 		if a.job != "route" or not a.is_up():
 			continue

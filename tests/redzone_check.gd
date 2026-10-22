@@ -12,12 +12,13 @@ func _init() -> void:
 	var catch_td := 0
 	var oob_catch := 0
 	var catches := 0
-	for off in Playbook.offense_names():
-		for de in Playbook.defense_names():
+	var pb := Playbook.make_default()
+	for off in pb.offense_names():
+		for de in pb.defense_names():
 			for i in 90:
 				var sim := PlaySim.new()
 				var spot := 70.0 + (i % 4) * 7.0 # 70, 77, 84, 91
-				sim.setup(a, b, off, de, spot, 26.67, {"down": 1, "to_go": 10}, dice)
+				sim.setup(a, b, pb.offense_play(off), pb.defense_play(de), spot, 26.67, {"down": 1, "to_go": 10}, dice)
 				var r := sim.run_to_end()
 				# Every catch and interception must happen inside the field of play.
 				for e in sim.events:
@@ -35,7 +36,7 @@ func _init() -> void:
 				var gs := GameState.new(a, b, 8.0, dice)
 				gs.ball_on = spot
 				var before := gs.score[1]
-				gs.apply_play(r, Playbook.is_run(off))
+				gs.apply_play(r, pb.is_run(off))
 				if r["kind"] == "td" and gs.score[gs.AWAY] == before:
 					bad += 1
 				sim.dispose()

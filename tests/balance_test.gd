@@ -9,16 +9,17 @@ func _init() -> void:
 	var dice := Dice.new(11)
 	var a := gen.make_team(0, Color.BLUE)
 	var b := gen.make_team(1, Color.RED)
+	var pb := Playbook.make_default()
 	var reps := 150
 	var totals := {}
 	print("%-16s %-12s %6s %6s %6s %6s %6s %6s %5s" % ["offense", "defense", "avg", "succ%", "cmp%", "sack%", "to%", "20+%", "secs"])
-	for off in Playbook.offense_names():
+	for off in pb.offense_names():
 		var row_sum := 0.0
-		for de in Playbook.defense_names():
+		for de in pb.defense_names():
 			var s := {"yds": 0.0, "succ": 0, "cmp": 0, "att": 0, "sack": 0, "to": 0, "big": 0, "secs": 0.0}
 			for i in reps:
 				var sim := PlaySim.new()
-				sim.setup(a, b, off, de, 35.0, 26.67, {"down": 1, "to_go": 10}, dice)
+				sim.setup(a, b, pb.offense_play(off), pb.defense_play(de), 35.0, 26.67, {"down": 1, "to_go": 10}, dice)
 				var r := sim.run_to_end()
 				var y: int = r["yards"]
 				if r["turnover"]:
@@ -44,7 +45,7 @@ func _init() -> void:
 				(100.0 * s["cmp"] / s["att"]) if s["att"] > 0 else 0.0,
 				100.0 * s["sack"] / reps, 100.0 * s["to"] / reps, 100.0 * s["big"] / reps,
 				s["secs"] / reps])
-		totals[off] = row_sum / Playbook.defense_names().size()
+		totals[off] = row_sum / pb.defense_names().size()
 	print("\nAverage by offensive call: ", totals)
 
 	print("\nFull games (CPU vs CPU, 15 min quarters):")
@@ -69,8 +70,10 @@ func _init() -> void:
 				continue
 			var dc := CoachAI.pick_defense(gs, rng)
 			var sim := PlaySim.new()
-			sim.setup(gs.offense(), gs.defense(), oc, dc, gs.ball_on, gs.spot_y, gs.situation(), dice)
-			gs.apply_play(sim.run_to_end(), Playbook.is_run(oc))
+			sim.setup(gs.offense(), gs.defense(), gs.offense_play(oc), gs.defense_play(dc), gs.ball_on, gs.spot_y,
+				gs.situation(), dice)
+			var was_run := gs.offense_playbook().is_run(oc)
+			gs.apply_play(sim.run_to_end(), was_run)
 			sim.dispose()
 		pts += gs.score[0] + gs.score[1]
 		plays += gs.stats[0]["plays"] + gs.stats[1]["plays"]
