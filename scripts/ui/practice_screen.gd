@@ -277,6 +277,7 @@ func _begin_rep() -> void:
 	for name in Playbook.offense_names():
 		var b := UiStyle.button(name, Playbook.OFFENSE[name]["desc"])
 		b.pressed.connect(_offense_called.bind(name))
+		_hook_route_preview(b, name)
 		call_buttons.add_child(b)
 
 
@@ -286,6 +287,7 @@ func _offense_called(call: String) -> void:
 		return
 	pending_off = call
 	state = "calling_def"
+	_show_lineup(call) # keep the chosen play's routes up while the coverage is picked
 	for c in call_buttons.get_children():
 		c.queue_free()
 	call_title.text = "%s. Pick a defensive coverage." % call
@@ -305,17 +307,29 @@ func _defense_called(call: String) -> void:
 	_start_play()
 
 
-## Shows both teams lined up at the ball while a play is being called.
-func _show_lineup() -> void:
+## Shows both teams lined up at the ball while a play is being called. With ghost_play set,
+## the lineup uses that play's design and its routes are drawn as a ghost overlay.
+func _show_lineup(ghost_play: String = "") -> void:
 	var p := PlaySim.new()
-	p.setup(gs.offense(), gs.defense(), "Inside Run", "Cover 3", gs.ball_on, gs.spot_y,
+	p.setup(gs.offense(), gs.defense(), ghost_play if ghost_play != "" else "Inside Run", "Cover 3", gs.ball_on, gs.spot_y,
 		gs.situation(), Dice.new(1))
 	if sim != null:
 		sim.dispose()
 	sim = p
 	field.sim = p
 	field.preview = true
+	field.ghost_routes = ghost_play != ""
 	field.flip = false
+
+
+## Hovering an offensive play button previews its run path / pass routes on the field.
+func _hook_route_preview(b: Button, play: String) -> void:
+	b.mouse_entered.connect(func() -> void:
+		if state == "calling_off":
+			_show_lineup(play))
+	b.mouse_exited.connect(func() -> void:
+		if state == "calling_off" and field.ghost_routes:
+			_show_lineup())
 
 
 func _start_play() -> void:
