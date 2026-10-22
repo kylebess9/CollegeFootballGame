@@ -1132,7 +1132,11 @@ func _resolve_catch() -> void:
 	rec.path.clear()
 	rec.path_index = 0
 	for d in defenders():
-		d.pursue_at = minf(d.pursue_at, t + d.react_time)
+		# A defender who was already covering this receiver (his man, or close enough in
+		# zone to have a hand on the play) is watching the catch happen and reacts right
+		# away. Everyone else still needs a short beat to find the ball.
+		var covering_him := d.man_target == rec or d.pos.distance_to(rec.pos) <= 4.0
+		d.pursue_at = minf(d.pursue_at, t if covering_him else t + d.react_time)
 	if rec.pos.x >= OPP_GOAL:
 		_touchdown(rec)
 
