@@ -1,8 +1,15 @@
 extends Control
 ## Roster table with every rating and skill, plus a legend explaining what each one does.
+## In debug mode, clicking a player opens an editor for their ratings and skills instead.
+
+const PlayerEditor := preload("res://scripts/ui/player_editor.gd")
 
 var main
 var team: Team
+var tree: Tree
+var legend: RichTextLabel
+var edit_panel: PlayerEditor
+var _item_players := {} # TreeItem -> FootballPlayer
 
 const POS_ORDER := ["QB", "RB", "WR", "TE", "OL", "DL", "LB", "CB", "S", "K"]
 const COLS := ["Pos", "#", "Name", "Yr", "OVR", "SPD", "STR", "AGI", "HND", "PAS", "TKL", "AWR", "KCK", "Skills"]
@@ -33,7 +40,7 @@ func _ready() -> void:
 	body.add_theme_constant_override("separation", 14)
 	root.add_child(body)
 
-	var tree := Tree.new()
+	tree = Tree.new()
 	tree.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	tree.size_flags_stretch_ratio = 2.6
 	tree.columns = COLS.size()
@@ -46,17 +53,48 @@ func _ready() -> void:
 		if not (i == 2 or i == 13):
 			tree.set_column_custom_minimum_width(i, 52)
 	tree.set_column_custom_minimum_width(2, 170)
+	tree.item_selected.connect(_on_row_selected)
 	body.add_child(tree)
-	_fill(tree)
+	_fill()
 
-	var legend := RichTextLabel.new()
+	legend = RichTextLabel.new()
 	legend.bbcode_enabled = true
 	legend.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	legend.text = _legend_text()
 	body.add_child(legend)
 
+	edit_panel = PlayerEditor.new()
+	edit_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	edit_panel.visible = false
+	edit_panel.saved.connect(_on_edit_saved)
+	edit_panel.cancelled.connect(_on_edit_closed)
+	body.add_child(edit_panel)
 
-func _fill(tree: Tree) -> void:
+
+func _on_row_selected() -> void:
+	if not Settings.debug_mode:
+		return
+	var p: FootballPlayer = _item_players.get(tree.get_selected())
+	if p == null:
+		return
+	edit_panel.setup(p)
+	edit_panel.visible = true
+	legend.visible = false
+
+
+func _on_edit_saved() -> void:
+	_on_edit_closed()
+	_fill() # ratings/skills may have changed
+
+
+func _on_edit_closed() -> void:
+	edit_panel.visible = false
+	legend.visible = true
+
+
+func _fill() -> void:
+	tree.clear()
+	_item_players.clear()
 	var root_item := tree.create_item()
 	var starters := {}
 	var dc := team.depth_chart()
@@ -65,6 +103,7 @@ func _fill(tree: Tree) -> void:
 	for pos in POS_ORDER:
 		for p in team.players_at(pos):
 			var it := tree.create_item(root_item)
+			_item_players[it] = p
 			var star := "★ " if starters.has(p) else ""
 			var vals := [pos, str(p.number), star + p.full_name(), p.year_label(), str(p.overall())]
 			for a in FootballPlayer.ATTRS:
