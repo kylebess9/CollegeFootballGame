@@ -985,7 +985,13 @@ func _update_blocks() -> void:
 		if b.engaged == null:
 			var d := b.block_target
 			if d != null and d.is_up() and d.engaged == null and b.block_cooldown <= 0.0 and d.block_cooldown <= 0.0:
-				if b.pos.distance_to(d.pos) < BLOCK_RANGE:
+				# A defender who has already recognized the play and is pursuing the ball
+				# carrier (or otherwise pulling away rather than squaring up) is too locked
+				# in to be freshly blocked here -- don't let a blocker just grab him out of
+				# his pursuit angle for free. For now this simply denies the block; later
+				# this is a natural spot for a holding roll instead (let the block succeed
+				# anyway at the risk of a penalty, rather than a flat no).
+				if not _chasing(d) and b.pos.distance_to(d.pos) < BLOCK_RANGE:
 					b.engaged = d
 					d.engaged = b
 					b.block_timer = 0.6 if pass_pro else 0.25
