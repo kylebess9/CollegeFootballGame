@@ -3,6 +3,7 @@ extends Control
 ## watch them play out, and read every dice roll in the log.
 
 const FieldView := preload("res://scripts/ui/field_view.gd")
+const PlayerEditor := preload("res://scripts/ui/player_editor.gd")
 const SPEEDS := [0.5, 1.0, 2.0, 4.0]
 const POST_PLAY_PAUSE := 1.6
 
@@ -16,6 +17,8 @@ var field: FieldView
 var side_header: Label
 var log_label: RichTextLabel
 var hover_label: RichTextLabel
+var edit_panel: PlayerEditor
+var editing := false # true while the debug player editor is open; suspends hover swapping
 var call_title: Label
 var call_hint: Label
 var call_buttons: HFlowContainer
@@ -79,6 +82,7 @@ func _build_ui() -> void:
 	field.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	field.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	field.hover_changed.connect(_on_hover_changed)
+	field.actor_clicked.connect(_on_actor_clicked)
 	mid.add_child(field)
 
 	var side := VBoxContainer.new()
@@ -100,6 +104,12 @@ func _build_ui() -> void:
 	hover_label.add_theme_font_size_override("normal_font_size", 14)
 	hover_label.add_theme_font_size_override("bold_font_size", 14)
 	side.add_child(hover_label)
+	edit_panel = PlayerEditor.new()
+	edit_panel.visible = false
+	edit_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	edit_panel.saved.connect(_on_edit_saved)
+	edit_panel.cancelled.connect(_on_edit_closed)
+	side.add_child(edit_panel)
 
 	root.add_child(_build_call_panel())
 
@@ -215,8 +225,11 @@ func _log_line(bb: String) -> void:
 
 
 ## Swaps the play-by-play panel for a player's stats and skills while the mouse is over them
-## on the field, and swaps it back as soon as it isn't.
+## on the field, and swaps it back as soon as it isn't. Suspended while the debug editor
+## (opened by clicking a player) is up, so a stray hover elsewhere doesn't hide it.
 func _on_hover_changed(actor: SimActor) -> void:
+	if editing:
+		return
 	if actor == null:
 		hover_label.visible = false
 		log_label.visible = true
@@ -226,6 +239,29 @@ func _on_hover_changed(actor: SimActor) -> void:
 	hover_label.visible = true
 	log_label.visible = false
 	side_header.text = "PLAYER INFO"
+
+
+## Debug mode only: clicking a player on the field opens the ratings/skills editor.
+func _on_actor_clicked(actor: SimActor) -> void:
+	if not Settings.debug_mode or actor == null:
+		return
+	editing = true
+	edit_panel.setup(actor.player)
+	edit_panel.visible = true
+	hover_label.visible = false
+	log_label.visible = false
+	side_header.text = "EDIT PLAYER (DEBUG)"
+
+
+func _on_edit_saved() -> void:
+	_on_edit_closed()
+
+
+func _on_edit_closed() -> void:
+	editing = false
+	edit_panel.visible = false
+	log_label.visible = true
+	side_header.text = "PLAY-BY-PLAY & DICE"
 
 
 func _player_card_bbcode(a: SimActor) -> String:
@@ -351,6 +387,8 @@ func _log_play_header(off_call: String, def_call: String) -> void:
 
 
 func _start_play() -> void:
+	if editing:
+		_on_edit_closed() # don't let a play start with the debug editor still up
 	if sim != null:
 		sim.dispose()
 	_log_play_header(pending_off, pending_def)

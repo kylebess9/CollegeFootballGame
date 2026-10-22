@@ -42,6 +42,23 @@ func _ready() -> void:
 	opts.add_child(q)
 	col.add_child(opts)
 
+	var debug_check := CheckBox.new()
+	debug_check.text = "Debug Mode"
+	debug_check.tooltip_text = "Click a player in the roster or on the field to edit their ratings and skills. Can also be toggled anytime with F1."
+	debug_check.button_pressed = Settings.debug_mode
+	debug_check.toggled.connect(Settings.set_debug_mode)
+	# Keep the checkbox in sync if debug mode is toggled some other way (e.g. F1) while
+	# this menu is up, and stop listening once the menu is gone.
+	var sync_check := func(key: String, value: Variant) -> void:
+		if key == "debug_mode":
+			debug_check.set_pressed_no_signal(value)
+	Settings.changed.connect(sync_check)
+	tree_exiting.connect(func() -> void: Settings.changed.disconnect(sync_check))
+	var debug_row := HBoxContainer.new()
+	debug_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	debug_row.add_child(debug_check)
+	col.add_child(debug_row)
+
 	var play := UiStyle.button("KICK OFF")
 	play.custom_minimum_size = Vector2(0, 56)
 	play.add_theme_font_size_override("font_size", 22)

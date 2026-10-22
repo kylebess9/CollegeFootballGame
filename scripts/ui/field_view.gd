@@ -19,6 +19,8 @@ var hovered: SimActor = null
 
 ## Emitted whenever the player under the mouse changes (null when none).
 signal hover_changed(actor: SimActor)
+## Emitted when the player currently under the mouse is clicked.
+signal actor_clicked(actor: SimActor)
 
 var _scale := 10.0
 var _origin := Vector2.ZERO
@@ -32,6 +34,12 @@ const LETTER := {
 func _ready() -> void:
 	font = get_theme_default_font()
 	clip_contents = true
+
+
+func _gui_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		if hovered != null:
+			actor_clicked.emit(hovered)
 
 
 func _process(delta: float) -> void:
