@@ -42,8 +42,11 @@ godot --headless --script res://tests/balance_test.gd
 ```
 - `tests/balance_test.gd` — runs each offense/defense play matchup thousands of times, prints
   average yards, success rate, completion %, sack/turnover/big-play rates, and simulates 20
-  full CPU-vs-CPU games for points-per-game. Use this to check that a change didn't blow up
-  game balance (target: ~39-40 points/team/game, run plays median ~4 yards, big plays ~1-2%).
+  full CPU-vs-CPU games for points-per-game. Use this to compare before/after a change so you
+  can see its effect, but there is no target points-per-game or yards-per-play right now —
+  the sim is still being actively reworked (blocking/pursuit logic especially) and scoring
+  levels are expected to swing a lot run to run. Report notable before/after swings when you
+  make a change, but don't treat hitting an old number as a goal in itself.
 - `tests/game_log.gd` — prints full play-by-play of one CPU-vs-CPU game. Use for spot-checking
   a specific mechanic's behavior in context.
 - `tests/redzone_check.gd` — regression test: scans every play for scoring/boundary bugs

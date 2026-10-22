@@ -859,6 +859,29 @@ func _chasing(d: SimActor) -> bool:
 	return carrier_live() and t >= d.pursue_at
 
 
+func _blocker_cuts_off(b: SimActor, d: SimActor) -> bool:
+	# Is the blocker actually standing in the defender's way -- between him and the point
+	# he's heading to intercept the ball carrier -- rather than off to the side or behind him
+	# while the defender runs away or around him? For now this is a flat yes/no: in his way
+	# means a block is allowed, not in his way means no block chance at all; later this is a
+	# natural spot for a holding roll instead (let the block succeed anyway at the risk of a
+	# penalty, rather than a flat no).
+	if not carrier_live():
+		return true
+	var target := _pursue_point(d)
+	var path := target - d.pos
+	var path_len := path.length()
+	if path_len < 0.5:
+		return true
+	var dir := path / path_len
+	var to_blocker := b.pos - d.pos
+	var ahead := to_blocker.dot(dir)
+	if ahead <= 0.0 or ahead >= path_len:
+		return false
+	var lateral := (to_blocker - dir * ahead).length()
+	return lateral <= BLOCK_RANGE
+
+
 func _rush_target(d: SimActor) -> Vector2:
 	if _chasing(d):
 		return _pursue_point(d)
@@ -985,7 +1008,7 @@ func _update_blocks() -> void:
 		if b.engaged == null:
 			var d := b.block_target
 			if d != null and d.is_up() and d.engaged == null and b.block_cooldown <= 0.0 and d.block_cooldown <= 0.0:
-				if b.pos.distance_to(d.pos) < BLOCK_RANGE:
+				if _blocker_cuts_off(b, d) and b.pos.distance_to(d.pos) < BLOCK_RANGE:
 					b.engaged = d
 					d.engaged = b
 					b.block_timer = 0.6 if pass_pro else 0.25
