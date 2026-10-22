@@ -13,6 +13,7 @@ var sim: PlaySim
 var flip := false
 var preview := false # true while showing the pre-snap lineup
 var ghost_routes := false # with preview: overlay the lined-up play's routes as a faint ghost
+var ghost_defense := false # with preview: overlay the lined-up coverage's assignments
 var popups: Array[Dictionary] = [] # {text, pos (field), color, born}
 var clock := 0.0
 var font: Font
@@ -102,8 +103,11 @@ func _draw() -> void:
 	if sim != null:
 		if not preview:
 			_draw_routes()
-		elif ghost_routes:
-			_draw_ghost_routes()
+		else:
+			if ghost_defense:
+				_draw_ghost_defense()
+			if ghost_routes:
+				_draw_ghost_routes()
 		_draw_players()
 		if not preview:
 			_draw_ball()
@@ -255,6 +259,59 @@ func _draw_ghost_routes() -> void:
 		var k := maxf(6.0, _scale * 1.1)
 		draw_colored_polygon(PackedVector2Array([tip, tip - dir * k + side * k * 0.5,
 			tip - dir * k - side * k * 0.5]), col)
+
+
+## Pre-snap preview of a coverage being hovered in the call menu: zones are circles with a
+## fill that fades out toward the edge plus a dashed line from the defender to the zone's
+## center, man defenders get a solid line to the receiver they follow, and blitzers an arrow at the QB.
+## The down linemen always rush, so they get no arrow; only the call's own blitzers do.
+const GHOST_COVER := Color(0.62, 0.85, 1.0, 0.75)
+const GHOST_BLITZ := Color(1.0, 0.45, 0.35, 0.85)
+const DOWN_LINEMEN := ["DE1", "DT1", "DT2", "DE2"]
+
+
+func _draw_ghost_defense() -> void:
+	var dash := maxf(4.0, _scale * 0.8)
+	for a in sim.actors:
+		if a.side != SimActor.Side.DEFENSE:
+			continue
+		var from := to_screen(a.pos)
+		match a.job:
+			"zone":
+				_draw_zone(to_screen(a.zone_center), a.zone_radius * _scale)
+				draw_dashed_line(from, to_screen(a.zone_center), GHOST_COVER, 2.0, dash)
+			"man":
+				if a.man_target != null:
+					draw_line(from, to_screen(a.man_target.pos), GHOST_COVER, 2.0) # solid: man
+			"rush":
+				if not a.slot in DOWN_LINEMEN and sim.qb != null:
+					var to := to_screen(sim.qb.pos)
+					var dir := (to - from).normalized()
+					_draw_arrow(from, to - dir * DOT_R * _scale * 1.6, GHOST_BLITZ, 3.0)
+
+
+func _draw_zone(center: Vector2, radius: float) -> void:
+	var n := 40
+	var pts := PackedVector2Array([center])
+	var cols := PackedColorArray([Color(GHOST_COVER, 0.28)])
+	for i in n + 1:
+		var ang := TAU * i / n
+		pts.append(center + Vector2(cos(ang), sin(ang)) * radius)
+		cols.append(Color(GHOST_COVER, 0.02))
+	# Triangle fan: center vertex is the most opaque, fading to nearly clear at the rim.
+	for i in range(1, n + 1):
+		draw_polygon(PackedVector2Array([pts[0], pts[i], pts[i + 1]]),
+			PackedColorArray([cols[0], cols[i], cols[i + 1]]))
+	draw_arc(center, radius, 0, TAU, n, Color(GHOST_COVER, 0.45), 1.5)
+
+
+func _draw_arrow(from: Vector2, to: Vector2, col: Color, width: float) -> void:
+	var dir := (to - from).normalized()
+	var side := Vector2(-dir.y, dir.x)
+	var k := maxf(7.0, _scale * 1.2)
+	draw_line(from, to - dir * k * 0.8, col, width)
+	draw_colored_polygon(PackedVector2Array([to, to - dir * k + side * k * 0.55,
+		to - dir * k - side * k * 0.55]), col)
 
 
 func _draw_players() -> void:
