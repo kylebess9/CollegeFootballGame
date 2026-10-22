@@ -21,7 +21,6 @@ func setup(p: FootballPlayer) -> void:
 	_skill_checks.clear()
 
 	add_theme_constant_override("separation", 6)
-	add_child(UiStyle.label("EDIT PLAYER (DEBUG)", 13, UiStyle.MUTED))
 	add_child(UiStyle.label("%s   %s #%d" % [p.full_name(), p.position, p.number], 16, UiStyle.ACCENT))
 
 	var scroll := ScrollContainer.new()
