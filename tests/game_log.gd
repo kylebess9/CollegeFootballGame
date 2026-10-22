@@ -20,9 +20,12 @@ func _init() -> void:
 		else:
 			var dc := CoachAI.pick_defense(gs, rng)
 			var sim := PlaySim.new()
-			sim.setup(gs.offense(), gs.defense(), oc, dc, gs.ball_on, gs.spot_y, gs.situation(), dice)
+			sim.setup(gs.offense(), gs.defense(), gs.offense_play(oc), gs.defense_play(dc), gs.ball_on, gs.spot_y,
+				gs.situation(), dice)
 			var r := sim.run_to_end()
+			var was_run := gs.offense_playbook().is_run(oc)
 			oc += " v " + dc + " [" + r["kind"] + "]"
-			lines = gs.apply_play(r, Playbook.is_run(oc))
+			lines = gs.apply_play(r, was_run)
+			sim.dispose()
 		print(pre, " :: ", oc, " -> ", " / ".join(lines))
 	quit()

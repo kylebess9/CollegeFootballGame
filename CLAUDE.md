@@ -49,6 +49,8 @@ godot --headless --script res://tests/balance_test.gd
   make a change, but don't treat hitting an old number as a goal in itself.
 - `tests/game_log.gd` — prints full play-by-play of one CPU-vs-CPU game. Use for spot-checking
   a specific mechanic's behavior in context.
+- `tests/playbook_check.gd` — checks the stock playbook is legal and that illegal formations and
+  plays are rejected. Run it after adding or changing plays.
 - `tests/redzone_check.gd` — regression test: scans every play for scoring/boundary bugs
   (a play ending in the end zone without being scored as a TD, a catch/interception recorded
   out of bounds). Extend this file's checks when you fix a new class of edge-case bug, so it
@@ -67,7 +69,9 @@ the pattern).
 - `scripts/data/` — `football_player.gd` (attributes, skills, overall rating),
   `team.gd`, `team_generator.gd` (random roster generation — there's no recruiting/drafting
   system yet, this is a placeholder).
-- `scripts/sim/` — `dice.gd`, `playbook.gd` (plays are data, not code — add new plays here),
+- `scripts/sim/` — `dice.gd`, `playbook.gd` (a team's playbook; the stock one is built in
+  `Playbook.make_default()` — plays are data, not code, add new plays there), `plays/` (the
+  formation/play/route/zone classes a playbook is made of; formations validate their own legality),
   `sim_actor.gd`, `play_sim.gd` (**the core simulation; largest and most sensitive file** —
   movement, QB decision logic, blocking, catching, tackling, boundaries, scoring),
   `game_state.gd` (score/clock/downs/possession), `coach_ai.gd` (CPU play-calling).

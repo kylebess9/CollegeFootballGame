@@ -295,7 +295,7 @@ func _begin_snap() -> void:
 	# The CPU decides first. If it punts or kicks, the user has nothing to call.
 	if not on_offense:
 		pending_off = CoachAI.pick_offense(gs, rng)
-		if pending_off in Playbook.SPECIAL:
+		if gs.offense_playbook().is_kick(pending_off):
 			call_title.text = "%s: %s" % [gs.offense().school, pending_off]
 			call_hint.text = ""
 			_run_special(pending_off)
@@ -315,24 +315,28 @@ func _begin_snap() -> void:
 	if on_offense:
 		call_title.text = "YOUR OFFENSE: %s. Call a play." % gs.down_text()
 		call_hint.text = "Hover a play to see what it does. The CPU has already picked its defense."
-		for name in Playbook.offense_names():
-			var b := UiStyle.button(name, Playbook.OFFENSE[name]["desc"])
+		var pb := gs.offense_playbook()
+		for name in pb.offense_names():
+			var b := UiStyle.button(name, pb.offense_play(name).description)
 			b.pressed.connect(_user_called.bind(name))
 			_hook_preview(b, name, "")
 			call_buttons.add_child(b)
-		var pb := UiStyle.button("Punt", "Kick it away. Distance = 34 + 2d6 yards, adjusted by your kicker's Kicking rating.")
-		pb.pressed.connect(_user_called.bind("Punt"))
-		call_buttons.add_child(pb)
+		var punt := pb.kick(Playbook.SPECIAL_PUNT)
+		var kb := UiStyle.button(punt.name, punt.description)
+		kb.pressed.connect(_user_called.bind(punt.name))
+		call_buttons.add_child(kb)
 		var t := gs.fg_target()
 		var fg_text := "Field Goal (%d yds, %s)" % [gs.fg_distance(), "out of range" if t >= 7 else "%d+" % Dice.clamp_target(t)]
-		var fb := UiStyle.button(fg_text, "Needs the shown number or better on a d6. Longer kicks are harder; a better kicker lowers the target.")
-		fb.pressed.connect(_user_called.bind("Field Goal"))
+		var fg := pb.kick(Playbook.SPECIAL_FG)
+		var fb := UiStyle.button(fg_text, fg.description)
+		fb.pressed.connect(_user_called.bind(fg.name))
 		call_buttons.add_child(fb)
 	else:
 		call_title.text = "YOUR DEFENSE: %s has %s. Call a coverage." % [gs.offense().school, gs.down_text()]
 		call_hint.text = "Hover a call to see its strengths. The CPU has already picked its play."
-		for name in Playbook.defense_names():
-			var b := UiStyle.button(name, Playbook.DEFENSE[name]["desc"])
+		var dpb := gs.defense_playbook()
+		for name in dpb.defense_names():
+			var b := UiStyle.button(name, dpb.defense_play(name).description)
 			b.pressed.connect(_user_called.bind(name))
 			_hook_preview(b, "", name)
 			call_buttons.add_child(b)
@@ -343,8 +347,8 @@ func _begin_snap() -> void:
 ## offense; man lines, zones and blitz arrows for the defense).
 func _show_lineup(off_play: String = "", def_play: String = "") -> void:
 	var p := PlaySim.new()
-	p.setup(gs.offense(), gs.defense(), off_play if off_play != "" else "Inside Run",
-		def_play if def_play != "" else "Cover 3", gs.ball_on, gs.spot_y,
+	p.setup(gs.offense(), gs.defense(), gs.offense_play(off_play if off_play != "" else "Inside Run"),
+		gs.defense_play(def_play if def_play != "" else "Cover 3"), gs.ball_on, gs.spot_y,
 		gs.situation(), Dice.new(1))
 	if sim != null:
 		sim.dispose()
@@ -376,7 +380,7 @@ func _user_called(call: String) -> void:
 		pending_off = call
 	else:
 		pending_def = call
-	if pending_off in Playbook.SPECIAL:
+	if gs.offense_playbook().is_kick(pending_off):
 		_run_special(pending_off)
 		return
 	_start_play()
@@ -385,7 +389,7 @@ func _user_called(call: String) -> void:
 func _run_special(call: String) -> void:
 	state = "post"
 	_log_play_header(call, "")
-	var lines := gs.run_punt() if call == "Punt" else gs.run_field_goal()
+	var lines := gs.run_punt() if gs.offense_playbook().kick(call).kind == KickPlay.PUNT else gs.run_field_goal()
 	for l in lines:
 		_log_line("   [b]%s[/b]" % l)
 	field.sim = null
@@ -413,9 +417,9 @@ func _start_play() -> void:
 	call_title.text = "%s vs %s" % [pending_off, pending_def]
 	call_hint.text = "Watching the play..."
 	sim = PlaySim.new()
-	sim.setup(gs.offense(), gs.defense(), pending_off, pending_def, gs.ball_on, gs.spot_y,
-		gs.situation(), dice)
-	sim_was_run = Playbook.is_run(pending_off)
+	sim.setup(gs.offense(), gs.defense(), gs.offense_play(pending_off), gs.defense_play(pending_def),
+		gs.ball_on, gs.spot_y, gs.situation(), dice)
+	sim_was_run = gs.offense_playbook().is_run(pending_off)
 	sim_off_is_me = gs.possession == me
 	field.preview = false
 	events_shown = 0

@@ -7,6 +7,9 @@ const AWAY := 1
 const FIELD_W := 53.333
 
 var teams: Array[Team] = []
+## Each team's playbook, indexed like teams (HOME, AWAY). The play simulation runs the plays
+## from these.
+var playbooks: Array[Playbook] = []
 var score: Array[int] = [0, 0]
 var quarter := 1
 var quarter_length := 480.0
@@ -24,8 +27,11 @@ var stats := [
 ]
 
 
-func _init(home: Team, away: Team, quarter_minutes: float, dice_in: Dice) -> void:
+func _init(home: Team, away: Team, quarter_minutes: float, dice_in: Dice,
+		home_playbook: Playbook = null, away_playbook: Playbook = null) -> void:
 	teams = [home, away]
+	playbooks = [home_playbook if home_playbook != null else Playbook.make_default(),
+		away_playbook if away_playbook != null else Playbook.make_default()]
 	quarter_length = quarter_minutes * 60.0
 	clock = quarter_length
 	dice = dice_in
@@ -37,6 +43,23 @@ func offense() -> Team:
 
 func defense() -> Team:
 	return teams[1 - possession]
+
+
+func offense_playbook() -> Playbook:
+	return playbooks[possession]
+
+
+func defense_playbook() -> Playbook:
+	return playbooks[1 - possession]
+
+
+## The offense's play and the defense's call with these names, from each side's own playbook.
+func offense_play(play_name: String) -> OffensivePlay:
+	return offense_playbook().offense_play(play_name)
+
+
+func defense_play(play_name: String) -> DefensivePlay:
+	return defense_playbook().defense_play(play_name)
 
 
 func situation() -> Dictionary:

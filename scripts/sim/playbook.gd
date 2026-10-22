@@ -1,11 +1,16 @@
 class_name Playbook
-extends RefCounted
-## All play calls live here as plain data so new plays are easy to add.
+extends Resource
+## A team's playbook: offensive formations (each holding its plays), defensive formations
+## (each holding its coverages), and the special teams kicks.
 ##
-## Route waypoints are (yards downfield, yards toward the sideline) from where the player lines up.
-## Negative "toward the sideline" means cutting inside. After the last point the player either
-## keeps running in the same direction ("go") or settles where he is ("stop").
+## Plays are data, not code. make_default() builds the stock playbook every team uses for
+## now; custom playbooks can be built the same way (or saved as resources) later.
+## Play names must be unique within a playbook, since calls are made by name.
 
+const SPECIAL_PUNT := "Punt"
+const SPECIAL_FG := "Field Goal"
+
+## Stock route tree, shared by every playbook. See Route for the point format.
 const ROUTES := {
 	"go": {"points": [Vector2(45, 0)], "end": "go"},
 	"slant": {"points": [Vector2(2, 0), Vector2(7, -5)], "end": "go"},
@@ -20,133 +25,255 @@ const ROUTES := {
 	"swing": {"points": [Vector2(-1, 4), Vector2(1, 9)], "end": "stop"},
 }
 
-const OFFENSE := {
-	"Inside Run": {
-		"type": "run", "run_path": "inside",
-		"desc": "Handoff between the tackles. Linemen block the man in front of them; the center climbs to the middle linebacker.",
-	},
-	"Outside Run": {
-		"type": "run", "run_path": "outside",
-		"desc": "Toss to the edge. Needs a fast back and receivers who can block corners.",
-	},
-	"Quick Slants": {
-		"type": "pass", "drop": 5.5, "read_start": 0.75, "play_action": false,
-		"routes": {"WR1": "slant", "WR2": "slant", "WR3": "slant", "TE": "flat"},
-		"protect": ["RB"],
-		"reads": ["WR3", "WR1", "WR2", "TE"],
-		"desc": "3-step drop, quick throw. Beats the blitz; weak against tight man coverage.",
-	},
-	"Curl Flat": {
-		"type": "pass", "drop": 7.0, "read_start": 1.3, "play_action": false,
-		"routes": {"WR1": "curl", "WR2": "curl", "WR3": "out", "TE": "seam", "RB": "swing"},
-		"protect": [],
-		"reads": ["WR1", "WR3", "WR2", "RB"],
-		"desc": "Intermediate timing throws that sit down in holes in zone coverage.",
-	},
-	"Four Verticals": {
-		"type": "pass", "drop": 8.0, "read_start": 1.9, "play_action": false,
-		"routes": {"WR1": "go", "WR2": "go", "WR3": "seam", "TE": "seam"},
-		"protect": ["RB"],
-		"reads": ["WR3", "TE", "WR2", "WR1"],
-		"desc": "Everyone goes deep. Big plays if the line holds and the receivers are fast.",
-	},
-	"PA Deep Shot": {
-		"type": "pass", "drop": 8.0, "read_start": 2.2, "play_action": true,
-		"routes": {"WR1": "post", "WR2": "corner", "WR3": "dig", "TE": "flat"},
-		"protect": ["RB"],
-		"reads": ["WR1", "WR2", "WR3", "TE"],
-		"desc": "Fake handoff, then throw deep. Linebackers with low Awareness bite on the fake.",
-	},
-	"Dig Cross": {
-		"type": "pass", "drop": 7.0, "read_start": 1.5, "play_action": false,
-		"routes": {"WR1": "dig", "WR2": "post", "WR3": "hitch", "TE": "out", "RB": "swing"},
-		"protect": [],
-		"reads": ["WR1", "WR3", "TE", "RB"],
-		"desc": "Crossing routes that punish man coverage with speed and route running.",
-	},
-}
-
-## Special teams calls handled directly by the game rules, not the play simulation.
-const SPECIAL := ["Punt", "Field Goal"]
-
-## Defensive assignments.
-##   rush  - rush the passer / attack the run
-##   blitz - linebacker or DB rushing
-##   man   - follow one receiver
-##   zone  - guard an area: dx yards past the line, and either fy (fraction of field width)
-##           or dy (yards from the ball), with radius r
-const DEFENSE := {
-	"Cover 3": {
-		"desc": "Three deep, four underneath. Solid against everything, rarely great.",
-		"assign": {
-			"CB1": {"type": "zone", "dx": 17, "fy": 0.17, "r": 9},
-			"CB2": {"type": "zone", "dx": 17, "fy": 0.83, "r": 9},
-			"FS": {"type": "zone", "dx": 19, "fy": 0.5, "r": 10},
-			"SS": {"type": "zone", "dx": 6, "dy": -10, "r": 6},
-			"WILL": {"type": "zone", "dx": 7, "dy": -4, "r": 5},
-			"MIKE": {"type": "zone", "dx": 7, "dy": 3, "r": 5},
-			"SAM": {"type": "zone", "dx": 6, "dy": 10, "r": 6},
-		},
-	},
-	"Cover 2": {
-		"desc": "Corners squat in the flats, two safeties split the deep field. Weak deep down the middle.",
-		"assign": {
-			"CB1": {"type": "zone", "dx": 5, "fy": 0.13, "r": 6},
-			"CB2": {"type": "zone", "dx": 5, "fy": 0.87, "r": 6},
-			"SS": {"type": "zone", "dx": 17, "fy": 0.27, "r": 11},
-			"FS": {"type": "zone", "dx": 17, "fy": 0.73, "r": 11},
-			"WILL": {"type": "zone", "dx": 8, "dy": -6, "r": 5},
-			"MIKE": {"type": "zone", "dx": 10, "dy": 0, "r": 5},
-			"SAM": {"type": "zone", "dx": 8, "dy": 6, "r": 5},
-		},
-	},
-	"Cover 1 Man": {
-		"desc": "Man coverage on every receiver with one deep safety. Your DBs need speed and Awareness.",
-		"assign": {
-			"CB1": {"type": "man", "target": "WR1"},
-			"CB2": {"type": "man", "target": "WR2"},
-			"SS": {"type": "man", "target": "WR3"},
-			"SAM": {"type": "man", "target": "TE"},
-			"WILL": {"type": "man", "target": "RB"},
-			"MIKE": {"type": "zone", "dx": 6, "dy": 0, "r": 6},
-			"FS": {"type": "zone", "dx": 17, "fy": 0.5, "r": 14},
-		},
-	},
-	"Blitz": {
-		"desc": "Six rushers and man coverage with no safety help. High risk, high reward.",
-		"assign": {
-			"CB1": {"type": "man", "target": "WR1"},
-			"CB2": {"type": "man", "target": "WR2"},
-			"SS": {"type": "man", "target": "WR3"},
-			"FS": {"type": "man", "target": "TE"},
-			"SAM": {"type": "man", "target": "RB"},
-			"WILL": {"type": "blitz"},
-			"MIKE": {"type": "blitz"},
-		},
-	},
-	"Run Stuff": {
-		"desc": "Strong safety creeps down and linebackers attack the line on the snap. Vulnerable to play action.",
-		"run_first": true,
-		"assign": {
-			"CB1": {"type": "zone", "dx": 15, "fy": 0.17, "r": 9},
-			"CB2": {"type": "zone", "dx": 15, "fy": 0.83, "r": 9},
-			"FS": {"type": "zone", "dx": 16, "fy": 0.5, "r": 11},
-			"SS": {"type": "zone", "dx": 5, "dy": -6, "r": 5},
-			"WILL": {"type": "zone", "dx": 5, "dy": -4, "r": 5},
-			"MIKE": {"type": "zone", "dx": 5, "dy": 2, "r": 5},
-			"SAM": {"type": "zone", "dx": 5, "dy": 7, "r": 5},
-		},
-	},
-}
+@export var name := ""
+@export var offensive_formations: Array[OffensiveFormation] = []
+@export var defensive_formations: Array[DefensiveFormation] = []
+@export var kicks: Array[KickPlay] = []
 
 
-static func offense_names() -> Array:
-	return OFFENSE.keys()
+## A fresh copy of a stock route.
+static func route(route_name: String) -> Route:
+	var r: Dictionary = ROUTES[route_name]
+	var pts: Array[Vector2] = []
+	pts.assign(r["points"])
+	return Route.make(route_name, pts, r["end"])
 
 
-static func defense_names() -> Array:
-	return DEFENSE.keys()
+# ---------------------------------------------------------------- lookups
+
+func offense_plays() -> Array[OffensivePlay]:
+	var out: Array[OffensivePlay] = []
+	for f in offensive_formations:
+		out.append_array(f.plays)
+	return out
 
 
-static func is_run(play_name: String) -> bool:
-	return OFFENSE.has(play_name) and OFFENSE[play_name]["type"] == "run"
+func defense_plays() -> Array[DefensivePlay]:
+	var out: Array[DefensivePlay] = []
+	for f in defensive_formations:
+		out.append_array(f.plays)
+	return out
+
+
+func offense_names() -> Array[String]:
+	var out: Array[String] = []
+	for p in offense_plays():
+		out.append(p.name)
+	return out
+
+
+func defense_names() -> Array[String]:
+	var out: Array[String] = []
+	for p in defense_plays():
+		out.append(p.name)
+	return out
+
+
+func offense_play(play_name: String) -> OffensivePlay:
+	for p in offense_plays():
+		if p.name == play_name:
+			return p
+	return null
+
+
+func defense_play(play_name: String) -> DefensivePlay:
+	for p in defense_plays():
+		if p.name == play_name:
+			return p
+	return null
+
+
+func kick(play_name: String) -> KickPlay:
+	for k in kicks:
+		if k.name == play_name:
+			return k
+	return null
+
+
+func is_kick(play_name: String) -> bool:
+	return kick(play_name) != null
+
+
+func is_run(play_name: String) -> bool:
+	var p := offense_play(play_name)
+	return p != null and p.is_run()
+
+
+## Every rule problem in the playbook; empty when everything is legal.
+func validate() -> Array[String]:
+	var errs: Array[String] = []
+	for f in offensive_formations:
+		errs.append_array(f.validate())
+	for f in defensive_formations:
+		errs.append_array(f.validate())
+	var seen := {}
+	for n in offense_names() + defense_names():
+		if seen.has(n):
+			errs.append("Two plays are named %s" % n)
+		seen[n] = true
+	if not is_kick(SPECIAL_PUNT) or not is_kick(SPECIAL_FG):
+		errs.append("%s needs a Punt and a Field Goal" % name)
+	return errs
+
+
+# ---------------------------------------------------------------- stock playbook
+
+static func make_default() -> Playbook:
+	var pb := Playbook.new()
+	pb.name = "Standard"
+	pb.offensive_formations.append(_pistol())
+	pb.defensive_formations.append(_base_43())
+	pb.defensive_formations.append(_box_43())
+	pb.kicks.append(KickPlay.make(SPECIAL_PUNT, KickPlay.PUNT,
+		"Kick it away. Distance = 34 + 2d6 yards, adjusted by your kicker's Kicking rating."))
+	pb.kicks.append(KickPlay.make(SPECIAL_FG, KickPlay.FIELD_GOAL,
+		"Needs the shown number or better on a d6. Longer kicks are harder; a better kicker lowers the target."))
+	return pb
+
+
+## QB four yards behind the center with the RB behind him; WR1 and the slot (WR3) to the
+## left, the TE and WR2 to the right.
+static func _pistol() -> OffensiveFormation:
+	var spots: Array[FormationSpot] = [
+		FormationSpot.make("C", "OL", Vector2(-0.6, 0.0)),
+		FormationSpot.make("LG", "OL", Vector2(-0.7, -1.4)),
+		FormationSpot.make("RG", "OL", Vector2(-0.7, 1.4)),
+		FormationSpot.make("LT", "OL", Vector2(-0.9, -2.8)),
+		FormationSpot.make("RT", "OL", Vector2(-0.9, 2.8)),
+		FormationSpot.make("TE", "TE", Vector2(-0.9, 4.3)),
+		FormationSpot.make("QB", "QB", Vector2(-4.0, 0.0)),
+		FormationSpot.make("RB", "RB", Vector2(-6.5, 0.0)),
+		FormationSpot.make("WR1", "WR", Vector2(-0.8, -13.0)),
+		FormationSpot.make("WR3", "WR", Vector2(-1.5, -6.0)),
+		FormationSpot.make("WR2", "WR", Vector2(-1.5, 15.0)),
+	]
+	var f := OffensiveFormation.make("Pistol", spots)
+	f.add_play(RunPlay.make("Inside Run",
+		"Handoff between the tackles. Linemen block the man in front of them; the center climbs to the middle linebacker.",
+		RunPlay.INSIDE))
+	f.add_play(RunPlay.make("Outside Run",
+		"Toss to the edge. Needs a fast back and receivers who can block corners.",
+		RunPlay.OUTSIDE))
+	f.add_play(PassPlay.make("Quick Slants",
+		"3-step drop, quick throw. Beats the blitz; weak against tight man coverage.",
+		5.5, 0.75, false,
+		{"WR1": route("slant"), "WR2": route("slant"), "WR3": route("slant"), "TE": route("flat")},
+		["RB"], ["WR3", "WR1", "WR2", "TE"]))
+	f.add_play(PassPlay.make("Curl Flat",
+		"Intermediate timing throws that sit down in holes in zone coverage.",
+		7.0, 1.3, false,
+		{"WR1": route("curl"), "WR2": route("curl"), "WR3": route("out"), "TE": route("seam"), "RB": route("swing")},
+		[], ["WR1", "WR3", "WR2", "RB"]))
+	f.add_play(PassPlay.make("Four Verticals",
+		"Everyone goes deep. Big plays if the line holds and the receivers are fast.",
+		8.0, 1.9, false,
+		{"WR1": route("go"), "WR2": route("go"), "WR3": route("seam"), "TE": route("seam")},
+		["RB"], ["WR3", "TE", "WR2", "WR1"]))
+	f.add_play(PassPlay.make("PA Deep Shot",
+		"Fake handoff, then throw deep. Linebackers with low Awareness bite on the fake.",
+		8.0, 2.2, true,
+		{"WR1": route("post"), "WR2": route("corner"), "WR3": route("dig"), "TE": route("flat")},
+		["RB"], ["WR1", "WR2", "WR3", "TE"]))
+	f.add_play(PassPlay.make("Dig Cross",
+		"Crossing routes that punish man coverage with speed and route running.",
+		7.0, 1.5, false,
+		{"WR1": route("dig"), "WR2": route("post"), "WR3": route("hitch"), "TE": route("out"), "RB": route("swing")},
+		[], ["WR1", "WR3", "TE", "RB"]))
+	return f
+
+
+## Four down linemen and three linebackers. The front seven line up off the ball; the corners
+## and strong safety line up over receivers.
+static func _front_seven() -> Array[FormationSpot]:
+	var spots: Array[FormationSpot] = [
+		FormationSpot.make("DE1", "DL", Vector2(1.0, -4.0)),
+		FormationSpot.make("DT1", "DL", Vector2(1.0, -1.0)),
+		FormationSpot.make("DT2", "DL", Vector2(1.0, 1.2)),
+		FormationSpot.make("DE2", "DL", Vector2(1.0, 3.7)),
+		FormationSpot.make("WILL", "LB", Vector2(5.0, -4.0)),
+		FormationSpot.make("MIKE", "LB", Vector2(5.0, 0.0)),
+		FormationSpot.make("SAM", "LB", Vector2(4.5, 4.5)),
+		FormationSpot.make("CB1", "CB", Vector2(6.0, 0.0), "left_1"),
+		FormationSpot.make("CB2", "CB", Vector2(6.0, 0.0), "right_1"),
+	]
+	return spots
+
+
+static func _base_43() -> DefensiveFormation:
+	var spots := _front_seven()
+	spots.append(FormationSpot.make("SS", "S", Vector2(8.0, 1.0), "left_2"))
+	spots.append(FormationSpot.make("FS", "S", Vector2(13.0, 0.0)))
+	var f := DefensiveFormation.make("4-3", spots)
+	var L := Zone.Spot.LEFT
+	var R := Zone.Spot.RIGHT
+	var C := Zone.Spot.CENTER
+	var SH := Zone.Depth.SHALLOW
+	var MID := Zone.Depth.INTERMEDIATE
+	var DP := Zone.Depth.DEEP
+	f.add_play(DefensivePlay.make("Cover 3",
+		"Three deep, four underneath. Solid against everything, rarely great.", [
+			CoverageAssignment.in_zone("CB1", Zone.make("Deep Third Left", DP, L, 9, 0.66, 17)),
+			CoverageAssignment.in_zone("CB2", Zone.make("Deep Third Right", DP, R, 9, 0.66, 17)),
+			CoverageAssignment.in_zone("FS", Zone.make("Deep Middle", DP, C, 10, 0.0, 19)),
+			CoverageAssignment.in_zone("SS", Zone.make("Curl Flat Left", SH, L, 6, 0.375, 6)),
+			CoverageAssignment.in_zone("WILL", Zone.make("Hook Left", MID, L, 5, 0.15, 7)),
+			CoverageAssignment.in_zone("MIKE", Zone.make("Hook Right", MID, R, 5, 0.11, 7)),
+			CoverageAssignment.in_zone("SAM", Zone.make("Curl Flat Right", SH, R, 6, 0.375, 6)),
+		]))
+	f.add_play(DefensivePlay.make("Cover 2",
+		"Corners squat in the flats, two safeties split the deep field. Weak deep down the middle.", [
+			CoverageAssignment.in_zone("CB1", Zone.make("Flat Left", SH, L, 6, 0.74, 5)),
+			CoverageAssignment.in_zone("CB2", Zone.make("Flat Right", SH, R, 6, 0.74, 5)),
+			CoverageAssignment.in_zone("SS", Zone.make("Deep Half Left", DP, L, 11, 0.46, 17)),
+			CoverageAssignment.in_zone("FS", Zone.make("Deep Half Right", DP, R, 11, 0.46, 17)),
+			CoverageAssignment.in_zone("WILL", Zone.make("Hook Left", MID, L, 5, 0.225, 8)),
+			CoverageAssignment.in_zone("MIKE", Zone.make("Middle Hole", MID, C, 5, 0.0, 10)),
+			CoverageAssignment.in_zone("SAM", Zone.make("Hook Right", MID, R, 5, 0.225, 8)),
+		]))
+	# Man defenders are listed in the order they pick up receivers: each takes the closest
+	# receiver nobody has yet.
+	f.add_play(DefensivePlay.make("Cover 1 Man",
+		"Man coverage on every receiver with one deep safety. Your DBs need speed and Awareness.", [
+			CoverageAssignment.man("CB1"),
+			CoverageAssignment.man("CB2"),
+			CoverageAssignment.man("SS"),
+			CoverageAssignment.man("SAM"),
+			CoverageAssignment.man("WILL"),
+			CoverageAssignment.in_zone("MIKE", Zone.make("Short Middle", SH, C, 6, 0.0, 6)),
+			CoverageAssignment.in_zone("FS", Zone.make("Deep Middle", DP, C, 14, 0.0, 17)),
+		]))
+	f.add_play(DefensivePlay.make("Blitz",
+		"Six rushers and man coverage with no safety help. High risk, high reward.", [
+			CoverageAssignment.man("CB1"),
+			CoverageAssignment.man("CB2"),
+			CoverageAssignment.man("SS"),
+			CoverageAssignment.man("FS"),
+			CoverageAssignment.man("SAM"),
+			CoverageAssignment.blitz("WILL"),
+			CoverageAssignment.blitz("MIKE"),
+		]))
+	return f
+
+
+## Same front with the strong safety walked down into the box as an eighth run defender.
+static func _box_43() -> DefensiveFormation:
+	var spots := _front_seven()
+	spots.append(FormationSpot.make("SS", "S", Vector2(5.5, -6.5)))
+	spots.append(FormationSpot.make("FS", "S", Vector2(13.0, 0.0)))
+	var f := DefensiveFormation.make("4-3 Box", spots)
+	var L := Zone.Spot.LEFT
+	var R := Zone.Spot.RIGHT
+	var C := Zone.Spot.CENTER
+	var SH := Zone.Depth.SHALLOW
+	var DP := Zone.Depth.DEEP
+	f.add_play(DefensivePlay.make("Run Stuff",
+		"Strong safety creeps down and linebackers attack the line on the snap. Vulnerable to play action.", [
+			CoverageAssignment.in_zone("CB1", Zone.make("Deep Third Left", DP, L, 9, 0.66, 15)),
+			CoverageAssignment.in_zone("CB2", Zone.make("Deep Third Right", DP, R, 9, 0.66, 15)),
+			CoverageAssignment.in_zone("FS", Zone.make("Deep Middle", DP, C, 11, 0.0, 16)),
+			CoverageAssignment.in_zone("SS", Zone.make("Box Left", SH, L, 5, 0.225, 5)),
+			CoverageAssignment.in_zone("WILL", Zone.make("Hook Left", SH, L, 5, 0.15, 5)),
+			CoverageAssignment.in_zone("MIKE", Zone.make("Hook Right", SH, R, 5, 0.075, 5)),
+			CoverageAssignment.in_zone("SAM", Zone.make("Curl Flat Right", SH, R, 5, 0.2625, 5)),
+		], true))
+	return f

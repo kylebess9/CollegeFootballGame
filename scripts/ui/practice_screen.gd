@@ -274,8 +274,9 @@ func _begin_rep() -> void:
 		c.queue_free()
 	call_title.text = "Pick an offensive play."
 	call_hint.text = "Hover a play to see what it does."
-	for name in Playbook.offense_names():
-		var b := UiStyle.button(name, Playbook.OFFENSE[name]["desc"])
+	var pb := gs.offense_playbook()
+	for name in pb.offense_names():
+		var b := UiStyle.button(name, pb.offense_play(name).description)
 		b.pressed.connect(_offense_called.bind(name))
 		_hook_preview(b, name, "")
 		call_buttons.add_child(b)
@@ -292,8 +293,9 @@ func _offense_called(call: String) -> void:
 		c.queue_free()
 	call_title.text = "%s. Pick a defensive coverage." % call
 	call_hint.text = "Hover a call to see its strengths."
-	for name in Playbook.defense_names():
-		var b := UiStyle.button(name, Playbook.DEFENSE[name]["desc"])
+	var pb := gs.defense_playbook()
+	for name in pb.defense_names():
+		var b := UiStyle.button(name, pb.defense_play(name).description)
 		b.pressed.connect(_defense_called.bind(name))
 		_hook_preview(b, "", name)
 		call_buttons.add_child(b)
@@ -313,8 +315,8 @@ func _defense_called(call: String) -> void:
 ## offense; man lines, zones and blitz arrows for the defense).
 func _show_lineup(off_play: String = "", def_play: String = "") -> void:
 	var p := PlaySim.new()
-	p.setup(gs.offense(), gs.defense(), off_play if off_play != "" else "Inside Run",
-		def_play if def_play != "" else "Cover 3", gs.ball_on, gs.spot_y,
+	p.setup(gs.offense(), gs.defense(), gs.offense_play(off_play if off_play != "" else "Inside Run"),
+		gs.defense_play(def_play if def_play != "" else "Cover 3"), gs.ball_on, gs.spot_y,
 		gs.situation(), Dice.new(1))
 	if sim != null:
 		sim.dispose()
@@ -346,9 +348,9 @@ func _start_play() -> void:
 	call_title.text = "%s vs %s" % [pending_off, pending_def]
 	call_hint.text = "Watching the play..."
 	sim = PlaySim.new()
-	sim.setup(gs.offense(), gs.defense(), pending_off, pending_def, gs.ball_on, gs.spot_y,
-		gs.situation(), dice)
-	sim_was_run = Playbook.is_run(pending_off)
+	sim.setup(gs.offense(), gs.defense(), gs.offense_play(pending_off), gs.defense_play(pending_def),
+		gs.ball_on, gs.spot_y, gs.situation(), dice)
+	sim_was_run = gs.offense_playbook().is_run(pending_off)
 	field.preview = false
 	events_shown = 0
 	accum = 0.0
