@@ -315,8 +315,9 @@ func _defense_called(call: String) -> void:
 ## offense; man lines, zones and blitz arrows for the defense).
 func _show_lineup(off_play: String = "", def_play: String = "") -> void:
 	var p := PlaySim.new()
-	p.setup(gs.offense(), gs.defense(), gs.offense_play(off_play if off_play != "" else "Inside Run"),
-		gs.defense_play(def_play if def_play != "" else "Cover 3"), gs.ball_on, gs.spot_y,
+	p.setup(gs.offense(), gs.defense(),
+		gs.offense_playbook().offense_play_or_first(off_play if off_play != "" else "Inside Run"),
+		gs.defense_playbook().defense_play_or_first(def_play if def_play != "" else "Cover 3"), gs.ball_on, gs.spot_y,
 		gs.situation(), Dice.new(1))
 	if sim != null:
 		sim.dispose()
