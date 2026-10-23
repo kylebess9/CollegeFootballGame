@@ -40,6 +40,7 @@ const BOBBLE_STALL := 0.6     # a receiver who bobbles it and stays up stands st
 const LOOSE_REACH := 0.8      # how close a player has to be to try to scoop up a loose ball
 const FAKE_READ_DEPTH := 10.0 # safeties lined up shallower than this read play-action fakes
 const OPEN_THRESHOLD := 1.8
+const LANE_WIDTH := 2.0       # a defender this close to a receiver's path to the catch point is in his lane
 const MAX_TIME := 20.0
 const END_LINE_STOP := FIELD_LEN - 1.5 # receivers settle this deep in the end zone
 
@@ -689,18 +690,50 @@ func _catch_point(rec: SimActor, speed: float = -1.0) -> Vector2:
 	return land
 
 
+## Whether a defender stands between the receiver and the catch point, close enough to the
+## path that he threatens to deflect or pick off the ball. The QB won't throw into that.
+func _in_lane(d: SimActor, from: Vector2, to: Vector2) -> bool:
+	if d.engaged != null:
+		return false
+	var seg := to - from
+	var len_sq := seg.length_squared()
+	if len_sq < 0.01:
+		return false
+	var u := (d.pos - from).dot(seg) / len_sq
+	if u <= 0.0 or u >= 1.0:
+		return false
+	return d.pos.distance_to(from + seg * u) < LANE_WIDTH
+
+
 ## Yards of cushion the receiver will have when the ball arrives. Negative means covered.
+## A defender in the receiver's lane to the catch point covers him outright. A defender nearer
+## the catch point than the receiver can get there first, so he's judged by
+## how far he is from the spot after running for the flight time. One who is level with or
+## behind the receiver can only close the gap to him: he's judged by that gap, less what his
+## speed edge over the receiver gains. A same-speed trailing defender never catches up.
 func _openness(rec: SimActor) -> float:
 	var land := _catch_point(rec)
 	var tf := _flight_time(qb.pos, land, _arm_speed())
+	var rec_to_land := rec.pos.distance_to(land)
 	var best := 99.0
 	for d in defenders():
 		if not d.is_up():
 			continue
-		var reach := d.top_speed * maxf(0.0, tf - d.react_time) * 0.8
-		if d.engaged != null:
-			reach = 0.0
-		best = minf(best, d.pos.distance_to(land) - reach)
+		var run_time := maxf(0.0, tf - d.react_time)
+		var cushion: float
+		if _in_lane(d, rec.pos, land):
+			cushion = -1.0
+		elif d.pos.distance_to(land) < rec_to_land:
+			var reach := d.top_speed * run_time * 0.8
+			if d.engaged != null:
+				reach = 0.0
+			cushion = d.pos.distance_to(land) - reach
+		else:
+			var gain := 0.0
+			if d.engaged == null:
+				gain = maxf(0.0, d.top_speed - rec.top_speed) * run_time * 0.8
+			cushion = d.pos.distance_to(rec.pos) - gain
+		best = minf(best, cushion)
 	return best
 
 
