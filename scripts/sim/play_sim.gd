@@ -88,6 +88,7 @@ var qb_state := "drop" # drop, read, handed_off, thrown, scramble
 var qb_set := Vector2.ZERO
 var read_index := 0
 var read_timer := 0.0
+var read_time := 0.0 # how long the current read lasts in all (read_timer counts it down)
 var read_noise := 0.0
 var under_pressure := false
 var pressure_decided := false
@@ -618,11 +619,34 @@ func _start_read(i: int) -> void:
 	read_index = i
 	var awr := qb.r("awr")
 	read_timer = maxf(0.25, 0.62 - 0.06 * awr - (0.08 if qb.has_skill("Field General") else 0.0))
+	read_time = read_timer
 	read_noise = 0.0
 	# Misreads: low Awareness QBs sometimes think a covered man is open (or miss an open one).
 	var target := 7 - awr - (2 if qb.has_skill("Field General") else 0)
 	if dice.d6() < Dice.clamp_target(target - 1):
 		read_noise = dice.rng.randf_range(-1.2, 1.6)
+
+
+## The receiver the QB is looking at right now in his progression, or null when he isn't
+## reading (still in his drop, or the ball is gone). For display only.
+func current_read() -> SimActor:
+	if pass_play == null or qb_state != "read" or done:
+		return null
+	return slots.get("O:" + pass_play.reads[read_index])
+
+
+## The QB's read clock, for display only: {"phase": "drop" (waiting out the play's
+## read_start) or "read" (on one read), "left": 1.0 down to 0.0 of that wait left}.
+## Empty when he isn't dropping back or reading.
+func read_clock() -> Dictionary:
+	if pass_play == null or done:
+		return {}
+	if qb_state == "drop":
+		var left := 0.0 if pass_play.read_start <= 0.0 else clampf(1.0 - t / pass_play.read_start, 0.0, 1.0)
+		return {"phase": "drop", "left": left}
+	if qb_state == "read":
+		return {"phase": "read", "left": clampf(read_timer / maxf(read_time, 0.01), 0.0, 1.0)}
+	return {}
 
 
 func _flight_time(from: Vector2, to: Vector2, speed: float = BALL_SPEED) -> float:

@@ -77,6 +77,10 @@ godot --headless --script res://tests/balance_test.gd
 - `tests/pass_speed_check.gd` — pass speed: a clean pass goes at the QB's arm speed (from Strength),
   a pressured one slower by a varying amount, a wobbly duck at half speed, and a pitch always at
   `BALL_SPEED`. Run it after touching the throw or `_launch` code in `play_sim.gd`.
+- `tests/qb_read_check.gd` — the QB read display (debug mode, and always in the playbook editor's
+  Run Play): the highlighted route is the read the sim is on (`PlaySim.current_read()`), and the
+  read clock (`PlaySim.read_clock()`) runs down the read_start wait, then each read. Run it after
+  touching the QB's read logic in `play_sim.gd` or the read drawing in `field_view.gd`.
 - `tests/redzone_check.gd` — regression test: scans every play for scoring/boundary bugs
   (a play ending in the end zone without being scored as a TD, a catch/interception recorded
   out of bounds). Extend this file's checks when you fix a new class of edge-case bug, so it

@@ -112,6 +112,7 @@ func _build_ui() -> void:
 	root.add_child(mid)
 
 	field = FieldView.new()
+	field.show_qb_reads = true # Run Play shows the QB's progression, debug mode or not
 	field.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	field.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	mid.add_child(field)
