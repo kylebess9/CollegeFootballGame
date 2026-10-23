@@ -3,6 +3,7 @@ extends SceneTree
 ## it, with a back button to the formation list. Practice calls the offense, then the defense
 ## (which can back out to the offense). In a game the user's offense calls without seeing the
 ## defense, while the user's defense sees the CPU offense's formation but not its play.
+## Practice also has a redo button that reruns the last rep's calls.
 ##   godot --headless --script res://tests/play_calling_check.gd
 # Loaded once the game is up, since the screens use the Settings autoload.
 var MatchScreen: GDScript
@@ -62,6 +63,25 @@ func _check_practice(stub: MainStub) -> void:
 	_press(p, "Cover 2")
 	_expect(p.state == "playing" and p.pending_off == "Inside Run" and p.pending_def == "Cover 2" and _texts(p).is_empty(),
 		"picking a call runs the play")
+	_expect(p.redo_button.disabled, "redo is off while the play runs")
+
+	# Redo: once the play is over, runs the same two calls again without calling them.
+	while not p.sim.done:
+		p.sim.step()
+	p._finish_play()
+	_expect(p.state == "post" and not p.redo_button.disabled, "redo is on once the play is over")
+	p.redo_button.pressed.emit()
+	_expect(p.state == "playing" and p.pending_off == "Inside Run" and p.pending_def == "Cover 2" and not p.sim.done,
+		"redo during the post-play pause reruns the same calls")
+	while not p.sim.done:
+		p.sim.step()
+	p._finish_play()
+	p.post_timer = 0.0
+	p._process(0.0)
+	_expect(p.state == "calling_off" and not p.redo_button.disabled, "redo stays on once the call panel is back")
+	p.redo_button.pressed.emit()
+	_expect(p.state == "playing" and p.pending_off == "Inside Run" and p.pending_def == "Cover 2" and _texts(p).is_empty(),
+		"redo from the call panel skips both calls")
 	p.queue_free()
 	await process_frame
 
