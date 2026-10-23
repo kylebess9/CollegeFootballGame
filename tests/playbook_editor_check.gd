@@ -6,6 +6,7 @@ extends SceneTree
 const PlaybookEditor := preload("res://scripts/ui/playbook_editor.gd")
 const PlaybooksScreen := preload("res://scripts/ui/playbooks_screen.gd")
 const PlayOptions := preload("res://scripts/ui/playbook/play_options.gd")
+const ReadOrderList := preload("res://scripts/ui/playbook/read_order_list.gd")
 
 var failures := 0
 
@@ -255,9 +256,7 @@ func _check_screens(off: Playbook, def: Playbook, a: Team, b: Team) -> void:
 			var labels := ed.options.find_children("*", "Label", true, false).map(func(l: Label) -> String: return l.text)
 			_expect(not labels.any(func(t: String) -> bool: return t.begins_with("LT ") or t.begins_with("C ")),
 				"linemen aren't listed for a pass play")
-			var ranks := ed.options.find_children("*", "OptionButton", true, false).filter(
-				func(o: OptionButton) -> bool: return o.item_count > 0 and o.get_item_text(0) == "1")
-			_expect(ranks.size() == pp.reads.size(), "one read-order drop-down per route runner")
+			await _read_order_through_ui(ed, pp)
 		await _run_through_ui(ed)
 		await _edit_through_ui(ed)
 		await _build_through_ui(ed)
@@ -476,6 +475,69 @@ func _run_through_ui(ed: Node) -> void:
 		_expect(not ed.running and ed.field.preview and ed.sim != null and ed.sim.t == 0.0,
 			"%s: %s plays out, then the play art comes back" % [pb.name, p.name])
 	ed.select_play(null)
+
+
+## The read order list: one row per route runner, hovering or dragging a row points him out,
+## dropping a row reorders the reads, and pass block / a route take him off / put him last.
+func _read_order_through_ui(ed: Node, pp: PassPlay) -> void:
+	ed.select_play(pp)
+	await process_frame
+	await process_frame # rows laid out
+	var list = _read_list(ed)
+	_expect(list != null and list.rows.size() == pp.reads.size(), "one read-order row per route runner")
+	list.rows[1].mouse_entered.emit()
+	_expect(ed.field.highlighted != null and ed.field.highlighted.slot == pp.reads[1], "hovering a read-order row points him out")
+	list.rows[1].mouse_exited.emit()
+	_expect(ed.field.highlighted == null, "and leaving the row clears it")
+	var before := pp.reads.duplicate()
+	var last: String = before[-1]
+	list._drag_from(Vector2.ZERO, last, list.rows[-1])
+	_expect(ed.field.highlighted != null and ed.field.highlighted.slot == last, "dragging a row points him out")
+	list.rows[0].mouse_exited.emit()
+	_expect(ed.field.highlighted != null, "and keeps him pointed out while dragging over other rows")
+	var data := {ReadOrderList.DRAG_KEY: last}
+	_expect(list._can_drop_on_row(Vector2(4, 2), data, list.rows[0]) and list._drop_index == 0,
+		"dragging over the top half of the first row aims above it")
+	list._drop_on_row(Vector2(4, 2), data, list.rows[0])
+	var want := [last]
+	want.append_array(before.slice(0, before.size() - 1))
+	_expect(pp.reads == want, "dropping it there makes him the first read, the rest in order: %s" % [pp.reads])
+	_expect(ed.field.highlighted == null, "and the drop clears the outline")
+	await process_frame
+	list = _read_list(ed)
+	_expect(list.rows.size() == pp.reads.size(), "the list is rebuilt in the new order")
+	# Down a row: dropping into the gap below the next row.
+	var first: String = pp.reads[0]
+	list._drop_data(Vector2(4, list.rows[1].position.y + list.rows[1].size.y - 1), {ReadOrderList.DRAG_KEY: first})
+	_expect(pp.reads[1] == first and pp.reads[0] == before[0], "dragging the first read down one row: %s" % [pp.reads])
+	await process_frame
+	# Pass block takes a runner off the list; a route puts him back last.
+	var runner: String = pp.reads[0]
+	var opt: OptionButton = null
+	for o in ed.options.find_children("*", "OptionButton", true, false):
+		if o.item_count > 1 and o.get_item_text(0) == PlayOptions.BLOCK_LABEL and o.get_parent().get_child(0).text.begins_with(runner + " "):
+			opt = o
+	opt.select(0)
+	opt.item_selected.emit(0)
+	await process_frame
+	list = _read_list(ed)
+	_expect(not runner in pp.reads and list.rows.size() == pp.reads.size(), "pass blocking takes him off the read order")
+	opt = null
+	for o in ed.options.find_children("*", "OptionButton", true, false):
+		if o.item_count > 1 and o.get_item_text(0) == PlayOptions.BLOCK_LABEL and o.get_parent().get_child(0).text.begins_with(runner + " "):
+			opt = o
+	opt.select(1)
+	opt.item_selected.emit(1)
+	await process_frame
+	list = _read_list(ed)
+	_expect(pp.reads[-1] == runner and list.rows.size() == pp.reads.size(), "sending him out again puts him last")
+
+
+func _read_list(ed: Node) -> Node:
+	for n in ed.options.find_children("*", "VBoxContainer", true, false):
+		if n.get_script() == ReadOrderList:
+			return n
+	return null
 
 
 func _edit_through_ui(ed: Node) -> void:
