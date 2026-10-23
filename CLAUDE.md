@@ -81,7 +81,9 @@ the pattern).
   `game_state.gd` (score/clock/downs/possession), `coach_ai.gd` (CPU play-calling).
 - `scripts/ui/` — menu, roster screen, match screen, field drawing (`field_view.gd`),
   `playbooks_screen.gd` (Manage Playbooks) and `playbook_editor.gd`, whose parts (formation list,
-  play options panel, dialogs, drawn icon buttons) are in `scripts/ui/playbook/`. Custom
+  play options panel, dialogs, drawn icon buttons, and the formation builder: `formation_draft.gd`
+for its rules, `formation_board.gd` / `player_tray.gd` / `formation_panel.gd` for its UI) are in
+`scripts/ui/playbook/`. Custom
   playbooks aren't used in games yet; `GameState` still gives both teams the stock one.
 - `tests/` — see Testing above.
 

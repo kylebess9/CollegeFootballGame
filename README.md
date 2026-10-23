@@ -52,4 +52,10 @@ A new one starts with every stock formation package (`Playbook.offense_packages(
 `defense_packages()`), so a new stock formation added there shows up in new playbooks. The
 editor's route drop-down lists `Playbook.ROUTES`, its run paths `RunPlay.PATHS`, and its
 coverage choices `Playbook.ZONES` plus man and blitz. Who takes the snap is the formation's
-`snap_slot`.
+`snap_slot`, which must be the player closest behind the center.
+
+New formations are made in the editor's formation builder (Add Formation under the
+formations list, or a formation's pencil): pick how many players at each position, then drag
+them onto the field. `FormationDraft` (`scripts/ui/playbook/formation_draft.gd`) holds the
+builder's rules (line layout, snapping, no overlaps, who gets the snap); the legality checks
+themselves stay in `OffensiveFormation` / `DefensiveFormation`.

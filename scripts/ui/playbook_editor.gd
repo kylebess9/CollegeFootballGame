@@ -1,17 +1,21 @@
 extends Control
-## Edit one playbook: its name in the top left, the field in the middle showing the selected
-## play's art, the formations and their plays on the right, and the selected play's options
-## along the bottom. Laid out like match_screen / practice_screen. Every change is saved
-## straight away.
-##
-## This is the "edit playbook" view; formation building, custom routes and run paths will
-## be further views of this screen.
+## Edit one playbook. Laid out like match_screen / practice_screen, with two views:
+##   Edit playbook  - the playbook's name in the top left, the field in the middle showing
+##                    the selected play's art, the formations and their plays on the right,
+##                    and the selected play's options along the bottom.
+##   Edit formation - the formation builder: a close-up field to drag players around on,
+##                    the players still to place along the bottom, and whether the
+##                    formation is legal on the right.
+## Every change to a play is saved straight away; a formation is saved when the builder's
+## Save is pressed. Custom routes and run paths can be further views of this screen.
 
 const FieldView := preload("res://scripts/ui/field_view.gd")
 const FormationList := preload("res://scripts/ui/playbook/formation_list.gd")
 const PlayOptions := preload("res://scripts/ui/playbook/play_options.gd")
 const AddPlayDialog := preload("res://scripts/ui/playbook/add_play_dialog.gd")
-const FormationDialog := preload("res://scripts/ui/playbook/formation_dialog.gd")
+const NewFormationDialog := preload("res://scripts/ui/playbook/new_formation_dialog.gd")
+const FormationPanel := preload("res://scripts/ui/playbook/formation_panel.gd")
+const PlayerTray := preload("res://scripts/ui/playbook/player_tray.gd")
 ## Where the ball sits for the play art, in yards from the offense's own goal.
 const PREVIEW_SPOT := 40.0
 
@@ -25,7 +29,17 @@ var field: FieldView
 var formation_list: FormationList
 var options: PlayOptions
 var add_dialog: AddPlayDialog
-var formation_dialog: FormationDialog
+var new_formation_dialog: NewFormationDialog
+var view_title: Label
+## Edit playbook view.
+var playbook_view: Array[Control] = []
+## Edit formation view.
+var formation_view: Array[Control] = []
+var board: FormationBoard
+var formation_panel: FormationPanel
+var tray: PlayerTray
+var draft: FormationDraft = null # the formation being built, while the builder is open
+var editing_formation: Resource = null # the formation the draft came from; null for a new one
 var confirm: ConfirmationDialog
 var sim: PlaySim
 ## The opposite side's play the preview lines up against, from the stock playbook.
@@ -77,6 +91,19 @@ func _build_ui() -> void:
 	var side := VBoxContainer.new()
 	side.custom_minimum_size = Vector2(390, 0)
 	mid.add_child(side)
+	board = FormationBoard.new()
+	board.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	board.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	board.changed.connect(_on_draft_changed)
+	mid.add_child(board)
+	formation_panel = FormationPanel.new()
+	formation_panel.custom_minimum_size = Vector2(390, 0)
+	formation_panel.extra_problems = _formation_name_problems
+	formation_panel.changed.connect(_on_draft_changed)
+	formation_panel.save_requested.connect(_save_formation)
+	formation_panel.cancel_requested.connect(_close_builder)
+	formation_panel.delete_requested.connect(func() -> void: _on_delete_formation(editing_formation))
+	mid.add_child(formation_panel)
 	side.add_child(UiStyle.label("FORMATIONS", 13, UiStyle.MUTED))
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -88,6 +115,10 @@ func _build_ui() -> void:
 	formation_list.edit_formation_requested.connect(_on_edit_formation)
 	formation_list.delete_play_requested.connect(_on_delete_play)
 	scroll.add_child(formation_list)
+	var add_formation := UiStyle.button("+  Add Formation")
+	add_formation.add_theme_color_override("font_color", UiStyle.GOOD)
+	add_formation.pressed.connect(func() -> void: new_formation_dialog.open(is_offense()))
+	side.add_child(add_formation)
 
 	var bottom := PanelContainer.new()
 	bottom.custom_minimum_size = Vector2(0, 150)
@@ -95,15 +126,25 @@ func _build_ui() -> void:
 	options.changed.connect(_on_play_edited)
 	bottom.add_child(options)
 	root.add_child(bottom)
+	var tray_panel := PanelContainer.new()
+	tray = PlayerTray.new()
+	tray.board = board
+	tray.changed.connect(_on_draft_changed)
+	tray_panel.add_child(tray)
+	root.add_child(tray_panel)
+
+	playbook_view.assign([field, side, bottom])
+	formation_view.assign([board, formation_panel, tray_panel])
+	_show_view(false)
 
 	add_dialog = AddPlayDialog.new()
 	add_dialog.check_name = _name_problem
 	add_dialog.submitted.connect(_add_play)
 	add_child(add_dialog)
-	formation_dialog = FormationDialog.new()
-	formation_dialog.name_changed.connect(_rename_formation)
-	formation_dialog.delete_requested.connect(_on_delete_formation)
-	add_child(formation_dialog)
+	new_formation_dialog = NewFormationDialog.new()
+	new_formation_dialog.check_name = _new_formation_name_problem
+	new_formation_dialog.submitted.connect(_on_new_formation)
+	add_child(new_formation_dialog)
 	confirm = ConfirmationDialog.new()
 	add_child(confirm)
 
@@ -128,10 +169,10 @@ func _build_header() -> Control:
 			_save())
 	h.add_child(name_edit)
 
-	var center := UiStyle.label("EDIT PLAYBOOK  ·  %s" % ("OFFENSE" if is_offense() else "DEFENSE"), 18, UiStyle.ACCENT)
-	center.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	h.add_child(center)
+	view_title = UiStyle.label("", 18, UiStyle.ACCENT)
+	view_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	view_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	h.add_child(view_title)
 
 	var back := UiStyle.button("Back to Playbooks")
 	back.pressed.connect(main.show_playbooks)
@@ -228,22 +269,12 @@ func _on_delete_play(p: Resource) -> void:
 		_save())
 
 
-func _on_edit_formation(f: Resource) -> void:
-	formation_dialog.open(f)
-
-
-func _rename_formation(f: Resource, new_name: String) -> void:
-	f.name = new_name
-	formation_list.rebuild()
-	_save()
-
-
 func _on_delete_formation(f: Resource) -> void:
 	_ask("Delete %s and its %d plays?" % [f.name, f.plays.size()], func() -> void:
 		if selected_play != null and selected_play.formation == f:
 			select_play(null)
 		_formations().erase(f)
-		formation_list.rebuild()
+		_close_builder()
 		_save())
 
 
@@ -254,3 +285,87 @@ func _ask(question: String, on_yes: Callable) -> void:
 	confirm.dialog_text = question
 	confirm.confirmed.connect(on_yes, CONNECT_ONE_SHOT)
 	confirm.popup_centered()
+
+
+# ---------------------------------------------------------------- formation builder
+
+func in_builder() -> bool:
+	return draft != null
+
+
+## Switches between the edit playbook view and the formation builder.
+func _show_view(building: bool) -> void:
+	for c in playbook_view:
+		c.visible = not building
+	for c in formation_view:
+		c.visible = building
+	var side_name := "OFFENSE" if is_offense() else "DEFENSE"
+	view_title.text = "%s  ·  %s" % ["EDIT FORMATION" if building else "EDIT PLAYBOOK", side_name]
+
+
+func _open_builder(d: FormationDraft, from: Resource) -> void:
+	draft = d
+	editing_formation = from
+	board.draft = d
+	tray.draft = d
+	formation_panel.edit(d, from != null)
+	_show_view(true)
+	_on_draft_changed()
+
+
+func _close_builder() -> void:
+	draft = null
+	editing_formation = null
+	board.draft = null
+	tray.draft = null
+	_show_view(false)
+	formation_list.rebuild()
+	_draw_play()
+
+
+func _on_draft_changed() -> void:
+	formation_panel.refresh()
+	board.queue_redraw()
+	tray.queue_redraw()
+
+
+func _new_formation_name_problem(n: String) -> String:
+	if n == "":
+		return "Give the formation a name."
+	if _formation_named(n, null) != null:
+		return "This playbook already has a formation called %s." % n
+	return ""
+
+
+func _formation_name_problems() -> Array[String]:
+	var errs: Array[String] = []
+	if draft != null and _formation_named(draft.name, editing_formation) != null:
+		errs.append("This playbook already has a formation called %s." % draft.name)
+	return errs
+
+
+func _formation_named(n: String, except: Resource) -> Resource:
+	for f in _formations():
+		if f != except and f.name == n:
+			return f
+	return null
+
+
+func _on_new_formation(formation_name: String, counts: Dictionary) -> void:
+	_open_builder(FormationDraft.create(formation_name, is_offense(), counts), null)
+
+
+func _on_edit_formation(f: Resource) -> void:
+	_open_builder(FormationDraft.from_formation(f), f)
+
+
+func _save_formation() -> void:
+	if not formation_panel.problems().is_empty():
+		return
+	if editing_formation != null:
+		draft.apply_to(editing_formation)
+	else:
+		_formations().append(draft.to_formation())
+	_save()
+	_close_builder()
+	options.show_play(selected_play) # the play's checks may change with the formation

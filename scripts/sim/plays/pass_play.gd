@@ -85,6 +85,8 @@ func validate() -> Array[String]:
 		if not f.has_slot(slot):
 			errs.append("%s: %s runs a route but isn't in %s" % [name, slot, f.name])
 		errs.append_array(routes[slot].validate())
+	if routes.has(f.snap_slot) or f.snap_slot in reads:
+		errs.append("%s: %s takes the snap, so can't run a route" % [name, f.snap_slot])
 	for slot in reads:
 		if not routes.has(slot):
 			errs.append("%s: QB reads %s, who isn't running a route" % [name, slot])

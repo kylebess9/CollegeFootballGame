@@ -75,6 +75,21 @@ func center_spot() -> FormationSpot:
 	return best
 
 
+## Whoever lines up closest behind the center, within SNAP_LANE of him across: the only
+## player who can take the snap. Null if nobody is there.
+func snap_candidate() -> FormationSpot:
+	var c := center_spot()
+	if c == null:
+		return null
+	var best: FormationSpot = null
+	for s in spots:
+		if s == c or s.offset.x >= c.offset.x or absf(s.offset.y - c.offset.y) > SNAP_LANE:
+			continue
+		if best == null or s.offset.x > best.offset.x:
+			best = s
+	return best
+
+
 ## Rule problems with this formation; empty when it's legal.
 func validate() -> Array[String]:
 	var errs: Array[String] = []
@@ -100,6 +115,9 @@ func validate() -> Array[String]:
 		errs.append("%s has no %s to take the snap" % [name, snap_slot])
 	elif absf(qb.offset.y - c.offset.y) > SNAP_LANE or qb.offset.x >= c.offset.x:
 		errs.append("%s needs the %s lined up directly behind the center to take the snap" % [name, snap_slot])
+	elif snap_candidate() != qb:
+		errs.append("%s: %s is between the center and the %s, so only %s can take the snap" % [
+			name, snap_candidate().slot, snap_slot, snap_candidate().slot])
 	for p in plays:
 		errs.append_array(p.validate())
 	return errs
