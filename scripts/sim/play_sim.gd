@@ -25,6 +25,7 @@ const ASSIST_RANGE := 2.0
 const BALL_SPEED := 21.0
 const CATCH_REACH := 1.6
 const HANDOFF_TIME := 0.55
+const FAKE_READ_DEPTH := 10.0 # safeties lined up shallower than this read play-action fakes
 const OPEN_THRESHOLD := 1.8
 const MAX_TIME := 20.0
 const END_LINE_STOP := FIELD_LEN - 1.5 # receivers settle this deep in the end zone
@@ -152,6 +153,7 @@ func _build_offense(play: OffensivePlay) -> void:
 		var p := _player_for(off_team, dc, spot, used)
 		used[p] = true
 		var a := _add(off_team, O, spot.slot, p, Vector2(los + spot.offset.x, _clamp_y(c + spot.offset.y)))
+		a.position = spot.position
 		a.job = "qb" if spot.slot == play.formation.snap_slot else "block"
 
 	if is_run:
@@ -224,6 +226,7 @@ func _build_defense(play: DefensivePlay) -> void:
 		var p := _player_for(def_team, dc, spot, used)
 		used[p] = true
 		var a := _add(def_team, D, spot.slot, p, Vector2(los + spot.offset.x, _clamp_y(_align_y(spot))))
+		a.position = spot.position
 		if spot.position == "DL":
 			a.job = "rush"
 
@@ -449,7 +452,7 @@ func _handle_snap_events() -> void:
 		handed_off = true
 		_log("Play-action fake!", qb.pos)
 		for d in defenders():
-			if d.slot in ["WILL", "MIKE", "SAM", "SS"] and d.job != "man" or d.run_first:
+			if _reads_fake(d) or d.run_first:
 				if d.run_first:
 					d.bite_until = maxf(d.bite_until, t + 1.2)
 					_log("%s bites on the fake (crashing the run)" % d.tag(), d.pos, 1, "", "Bit!")
@@ -460,6 +463,18 @@ func _handle_snap_events() -> void:
 					d.bite_until = t + 0.9
 					_log("%s bites on the fake" % d.tag(), d.pos, 1, res["detail"], "Bit!")
 		slots["O:RB"].job = "block"
+
+
+## Whether a defender has to read a play-action fake: linebackers, and safeties lined up
+## within run-support depth (closer than FAKE_READ_DEPTH yards off the ball), unless he's in
+## man coverage. Goes by the formation spot, so custom fronts with any number of LBs and
+## safeties work the same way the stock ones do.
+func _reads_fake(d: SimActor) -> bool:
+	if d.job == "man":
+		return false
+	if d.position == "LB":
+		return true
+	return d.position == "S" and d.start_pos.x - los < FAKE_READ_DEPTH
 
 
 # ---------------------------------------------------------------- QB decisions
