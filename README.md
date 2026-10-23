@@ -14,7 +14,8 @@ Players move automatically based on the play call. Dice settle the key moments:
 | Interception | Only a defender closer to the ball than the receiver. d6 needs (10 - Hands)+ |
 | Tackle | d6 needs 2+, +1 per 2 points runner Agility beats Tackling, -1 per helper, +1 diving |
 | Play action | Each linebacker/SS rolls Awareness or bites on the fake |
-| Fumble | A natural 6 tackle forces a roll to hold on |
+| Handoff / pitch | The RB must reach the QB (2.5 yds) within the run play's `time_delay`; if not, the QB pitches it. A pitch is caught on 2+ with a free re-roll |
+| Fumble | A natural 6 tackle forces a roll to hold on. A dropped pass or pitch thrown behind the QB is a fumble: the ball scatters and the nearest player tries to scoop it up, (7 - Agility)+, +1 per opponent marking him |
 
 Ratings are 1-6. Skills (Soft Hands, Pass Rusher, Ball Hawk...) give re-rolls or +1s.
 
