@@ -29,6 +29,10 @@ const HANDOFF_TIME := 0.55    # when a play-action fake happens, and when the de
 const HANDOFF_RADIUS := 10.0   # on a run the RB must get this close to the QB for a handoff...
 const HANDOFF_MIN_TIME := 0.3 # ...no sooner than this after the snap, else (RunPlay.time_delay) it's a pitch
 const PITCH_CATCH := 2        # a pitch is caught on this or better, with a free re-roll
+const OPEN_INT_BONUS := 3     # an interception is this much easier when no receiver is near the ball
+const CATCH_BURST := 1.2      # speed multiplier for a receiver who catches it cleanly...
+const CATCH_BURST_TIME := 1.0 # ...for this long
+const BOBBLE_STALL := 0.6     # a receiver who bobbles it and stays up stands still this long
 const LOOSE_REACH := 0.8      # how close a player has to be to try to scoop up a loose ball
 const FAKE_READ_DEPTH := 10.0 # safeties lined up shallower than this read play-action fakes
 const OPEN_THRESHOLD := 1.8
@@ -422,16 +426,17 @@ func _log(text: String, at: Vector2, ok: int = -1, detail: String = "", short :=
 
 
 ## A Blood Bowl style test: roll a d6, need target or higher. A matching skill can save a failure.
-func _test(a: SimActor, target: int, label: String, skill: String = "") -> Dictionary:
+## free_reroll gives the re-roll whether or not the player has the skill (it's still one re-roll).
+func _test(a: SimActor, target: int, label: String, skill: String = "", free_reroll := false) -> Dictionary:
 	target = Dice.clamp_target(target)
 	var first := dice.d6()
 	var roll := first
 	var ok := roll >= target
 	var detail := "%s: needs %d+, rolled %d" % [label, target, roll]
-	if not ok and skill != "" and a.has_skill(skill):
+	if not ok and (free_reroll or (skill != "" and a.has_skill(skill))):
 		roll = dice.d6()
 		ok = roll >= target
-		detail += ", %s re-roll %d" % [skill, roll]
+		detail += ", %s re-roll %d" % [skill if skill != "" and a.has_skill(skill) else "free", roll]
 	return {"ok": ok, "roll": roll, "first": first, "target": target, "detail": detail}
 
 
@@ -453,6 +458,8 @@ func step() -> void:
 		a.tackle_cooldown = maxf(0.0, a.tackle_cooldown - DT)
 		a.slow_time = maxf(0.0, a.slow_time - DT)
 		a.cut_time = maxf(0.0, a.cut_time - DT)
+		a.stall_time = maxf(0.0, a.stall_time - DT)
+		a.burst_time = maxf(0.0, a.burst_time - DT)
 
 	_handle_snap_events()
 	if not is_run and holder == qb and qb_state in ["drop", "read"]:
@@ -783,13 +790,15 @@ func _move(a: SimActor) -> void:
 		a.shove -= s
 		if a.shove.length() < 0.01:
 			a.shove = Vector2.ZERO
-	if a.engaged != null:
+	if a.engaged != null or a.stall_time > 0.0:
 		a.vel = Vector2.ZERO
 		return
 	var target := _desired(a)
 	var speed := a.top_speed
 	if a.slow_time > 0.0:
 		speed *= 0.5
+	elif a.burst_time > 0.0:
+		speed *= CATCH_BURST
 	if a.cut_time > 0.0:
 		speed *= 0.55
 	if a.job == "block" and holder == qb and not is_run:
@@ -1265,7 +1274,18 @@ func _resolve_catch() -> void:
 			mod = 1
 		elif ball_quality == "duck":
 			mod = -1
-		var res := _test(best_d, 10 - best_d.r("hnd") + mod, "Interception (Hands)", "Ball Hawk")
+		# A ball thrown where no offensive player can get to it is a gift: much easier to pick
+		# off, and the defender gets a free re-roll.
+		var alone := true
+		for o in offense():
+			if o.is_up() and o.pos.distance_to(ball_to) <= CATCH_REACH:
+				alone = false
+				break
+		var label := "Interception (Hands)"
+		if alone:
+			mod -= OPEN_INT_BONUS
+			label = "Interception (Hands, no receiver near, re-roll)"
+		var res := _test(best_d, 10 - best_d.r("hnd") + mod, label, "Ball Hawk", alone)
 		if res["ok"]:
 			_log("INTERCEPTED by %s!" % best_d.tag(), best_d.pos, 0, res["detail"], "INT!")
 			_start_turnover(best_d)
@@ -1302,20 +1322,43 @@ func _resolve_catch() -> void:
 		", off target" if ball_quality != "good" else ""]
 	if defended:
 		label = label.trim_suffix(")") + ", tipped)"
-	var res2 := _test(rec, 7 - rec.r("hnd") + mod2, label, "Soft Hands")
+	var catch_target := 7 - rec.r("hnd") + mod2
+	var res2 := _test(rec, catch_target, label, "Soft Hands")
+	var clean: bool = res2["ok"]
+	# An open receiver (nobody marking him, nobody got a hand on it) who misses the first try
+	# bobbles it and gets one more go, one easier. If he hauls it in he has to keep his feet
+	# ((7 - Agility)+): stay up and he stands still a moment gathering it, go down and the play
+	# is over where he lands (he's down, but it's a catch).
+	var bobbled := not clean and marks == 0 and not defended
+	if bobbled:
+		var res3 := _test(rec, catch_target - 1, "Bobbled, second try (Hands, +1)")
+		res2["detail"] += "; " + res3["detail"]
+		res2["ok"] = res3["ok"]
 	if not res2["ok"]:
 		if backward:
 			_fumble_loose(ball_to, "%s drops the backward pass" % rec.tag(), res2["detail"])
 		else:
 			_end_incomplete("Pass incomplete, dropped by %s" % rec.tag(), res2["detail"])
 		return
-	_log("Caught by %s" % rec.tag(), rec.pos, 1, res2["detail"], "Caught")
 	rec.pos = ball_to
-	rec.slow_time = 0.45
 	holder = rec
 	rec.job = "carry"
 	rec.path.clear()
 	rec.path_index = 0
+	if bobbled:
+		var feet := _test(rec, 7 - rec.r("agi"), "Stay on his feet (Agility)")
+		if not feet["ok"]:
+			_log("Caught by %s after a bobble, but he goes down" % rec.tag(), rec.pos, 1,
+				res2["detail"] + "; " + feet["detail"], "Caught")
+			_end_tackled(rec, "Caught by %s, down after the bobble" % rec.tag())
+			return
+		_log("Caught by %s after a bobble" % rec.tag(), rec.pos, 1,
+			res2["detail"] + "; " + feet["detail"], "Bobbled catch")
+		rec.stall_time = BOBBLE_STALL
+	else:
+		# A clean catch on the first try (Soft Hands' re-roll counts) lets him turn upfield in stride.
+		_log("Caught by %s" % rec.tag(), rec.pos, 1, res2["detail"], "Caught")
+		rec.burst_time = CATCH_BURST_TIME
 	for d in defenders():
 		# A defender who was already covering this receiver (his man, or close enough in
 		# zone to have a hand on the play) is watching the catch happen and reacts right

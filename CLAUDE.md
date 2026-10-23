@@ -70,6 +70,10 @@ godot --headless --script res://tests/balance_test.gd
   `time_delay` (`PlaySim.HANDOFF_RADIUS`), a pitch otherwise (caught on 2+ with a re-roll, never
   counted as a pass), and a dropped pass or pitch behind the QB is a loose-ball fumble. Run it after
   touching the handoff, catch or loose-ball code in `play_sim.gd`.
+- `tests/catch_check.gd` — pass catches: an open receiver who misses bobbles it and gets a second
+  try (then stays up and pauses, or goes down with the catch), a clean catch gives a speed burst,
+  and a ball no offensive player can reach is far easier to intercept. Run it after touching the
+  catch or interception code in `play_sim.gd`.
 - `tests/redzone_check.gd` — regression test: scans every play for scoring/boundary bugs
   (a play ending in the end zone without being scored as a TD, a catch/interception recorded
   out of bounds). Extend this file's checks when you fix a new class of edge-case bug, so it
