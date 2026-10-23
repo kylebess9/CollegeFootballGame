@@ -7,11 +7,6 @@ extends Resource
 @export var abbrev := ""
 @export var color := Color.BLUE
 @export var roster: Array[FootballPlayer] = []
-## The saved playbooks (from PlaybookStore) this team calls its plays from, picked on the
-## roster screen. null means the stock playbook. Use playbook_for() rather than reading
-## these, since a playbook can be deleted or broken in the editor after it was assigned.
-var offense_playbook: Playbook
-var defense_playbook: Playbook
 
 const OFFENSE_SLOTS: Array[String] = ["QB", "RB", "WR1", "WR2", "WR3", "TE", "LT", "LG", "C", "RG", "RT"]
 const DEFENSE_SLOTS: Array[String] = ["DE1", "DT1", "DT2", "DE2", "WILL", "MIKE", "SAM", "CB1", "CB2", "SS", "FS"]
@@ -19,16 +14,6 @@ const DEFENSE_SLOTS: Array[String] = ["DE1", "DT1", "DT2", "DE2", "WILL", "MIKE"
 
 func display_name() -> String:
 	return "%s %s" % [school, mascot]
-
-
-## The team's playbook for this side (Playbook.OFFENSE or Playbook.DEFENSE), or null when
-## the stock playbook should be used: nothing is assigned, or the assigned one has since
-## been deleted or left with illegal or no plays.
-func playbook_for(kind: String) -> Playbook:
-	var pb := offense_playbook if kind == Playbook.OFFENSE else defense_playbook
-	if pb == null or pb.resource_path == "" or not FileAccess.file_exists(pb.resource_path):
-		return null # never saved, or deleted (PlaybookStore.delete clears the path)
-	return pb if Playbook.usable_as(pb, kind) else null
 
 
 func players_at(pos: String) -> Array[FootballPlayer]:

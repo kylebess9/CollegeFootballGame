@@ -1,7 +1,5 @@
 extends Control
 ## Roster table with every rating and skill, plus a legend explaining what each one does.
-## The bar above the table picks the offensive and defensive playbooks the team uses in games
-## and practice.
 ## In debug mode, clicking a player opens an editor for their ratings and skills instead.
 
 const PlayerEditor := preload("res://scripts/ui/player_editor.gd")
@@ -36,7 +34,6 @@ func _ready() -> void:
 	header.add_child(spacer)
 	header.add_child(UiStyle.label("Overall %d   |   ★ = starter" % team.team_overall(), 16, UiStyle.MUTED))
 	root.add_child(header)
-	root.add_child(_playbook_bar())
 
 	var body := HBoxContainer.new()
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -72,52 +69,6 @@ func _ready() -> void:
 	edit_panel.saved.connect(_on_edit_saved)
 	edit_panel.cancelled.connect(_on_edit_closed)
 	body.add_child(edit_panel)
-
-
-# ---------------------------------------------------------------- playbooks
-
-func _playbook_bar() -> Control:
-	var bar := HBoxContainer.new()
-	bar.add_theme_constant_override("separation", 10)
-	bar.add_child(UiStyle.label("PLAYBOOKS", 16, UiStyle.MUTED))
-	bar.add_child(_playbook_picker(Playbook.OFFENSE))
-	bar.add_child(_playbook_picker(Playbook.DEFENSE))
-	return bar
-
-
-## A labelled dropdown of the stock playbook plus every saved playbook of this kind.
-## Playbooks that can't be used yet (illegal formations, no plays) are listed but disabled.
-func _playbook_picker(kind: String) -> Control:
-	var h := HBoxContainer.new()
-	h.add_theme_constant_override("separation", 6)
-	h.add_child(UiStyle.label("Offense:" if kind == Playbook.OFFENSE else "Defense:", 16))
-	var opt := OptionButton.new()
-	opt.custom_minimum_size = Vector2(240, 0)
-	opt.add_item("Standard (stock)")
-	var choices: Array = [null]
-	var assigned: Playbook = team.offense_playbook if kind == Playbook.OFFENSE else team.defense_playbook
-	var selected := 0
-	for pb in PlaybookStore.list(kind):
-		opt.add_item(pb.name)
-		var i := opt.item_count - 1
-		choices.append(pb)
-		if not Playbook.usable_as(pb, kind):
-			opt.set_item_disabled(i, true)
-			opt.set_item_tooltip(i, "Can't be used yet: it needs at least one legal play. Fix it in Manage Playbooks.")
-		if assigned != null and pb.resource_path == assigned.resource_path:
-			selected = i
-	opt.select(selected)
-	opt.tooltip_text = "The %s playbook this team calls plays from in games and practice." % kind
-	opt.item_selected.connect(func(i: int) -> void:
-		if kind == Playbook.OFFENSE:
-			team.offense_playbook = choices[i]
-		else:
-			team.defense_playbook = choices[i])
-	h.add_child(opt)
-	# An assigned playbook that has since broken or been deleted falls back to the stock one.
-	if assigned != null and team.playbook_for(kind) == null:
-		h.add_child(UiStyle.label("%s can't be used, so Standard is in use." % assigned.name, 13, UiStyle.BAD))
-	return h
 
 
 func _on_row_selected() -> void:

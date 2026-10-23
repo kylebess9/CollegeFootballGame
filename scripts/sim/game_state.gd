@@ -7,11 +7,9 @@ const AWAY := 1
 const FIELD_W := 53.333
 
 var teams: Array[Team] = []
-## Each team's offensive and defensive playbook, indexed like teams (HOME, AWAY): the ones
-## assigned on its roster screen, or the stock playbook. The play simulation runs the plays
+## Each team's playbook, indexed like teams (HOME, AWAY). The play simulation runs the plays
 ## from these.
-var offense_playbooks: Array[Playbook] = []
-var defense_playbooks: Array[Playbook] = []
+var playbooks: Array[Playbook] = []
 var score: Array[int] = [0, 0]
 var quarter := 1
 var quarter_length := 480.0
@@ -29,14 +27,11 @@ var stats := [
 ]
 
 
-func _init(home: Team, away: Team, quarter_minutes: float, dice_in: Dice) -> void:
+func _init(home: Team, away: Team, quarter_minutes: float, dice_in: Dice,
+		home_playbook: Playbook = null, away_playbook: Playbook = null) -> void:
 	teams = [home, away]
-	var stock := Playbook.make_default()
-	for t in teams:
-		var off := t.playbook_for(Playbook.OFFENSE)
-		var def := t.playbook_for(Playbook.DEFENSE)
-		offense_playbooks.append(off if off != null else stock)
-		defense_playbooks.append(def if def != null else stock)
+	playbooks = [home_playbook if home_playbook != null else Playbook.make_default(),
+		away_playbook if away_playbook != null else Playbook.make_default()]
 	quarter_length = quarter_minutes * 60.0
 	clock = quarter_length
 	dice = dice_in
@@ -51,11 +46,11 @@ func defense() -> Team:
 
 
 func offense_playbook() -> Playbook:
-	return offense_playbooks[possession]
+	return playbooks[possession]
 
 
 func defense_playbook() -> Playbook:
-	return defense_playbooks[1 - possession]
+	return playbooks[1 - possession]
 
 
 ## The offense's play and the defense's call with these names, from each side's own playbook.

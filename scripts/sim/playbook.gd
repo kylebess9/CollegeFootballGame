@@ -102,17 +102,6 @@ func has_play(play_name: String) -> bool:
 	return offense_play(play_name) != null or defense_play(play_name) != null or is_kick(play_name)
 
 
-## Whether a team can run its offense (or defense) from this playbook in a game: it covers
-## that side, has at least one play there, and passes validate().
-static func usable_as(pb: Playbook, side: String) -> bool:
-	if pb == null:
-		return false
-	if pb.kind != COMBINED and pb.kind != side:
-		return false
-	var plays: int = pb.offense_plays().size() if side == OFFENSE else pb.defense_plays().size()
-	return plays > 0 and pb.validate().is_empty()
-
-
 # ---------------------------------------------------------------- lookups
 
 func offense_plays() -> Array[OffensivePlay]:
@@ -155,22 +144,6 @@ func defense_play(play_name: String) -> DefensivePlay:
 		if p.name == play_name:
 			return p
 	return null
-
-
-## The play the field lines up in while a call is being picked: this one if the playbook
-## has it, otherwise the playbook's first.
-func offense_play_or_first(play_name: String) -> OffensivePlay:
-	var p := offense_play(play_name)
-	if p == null and not offense_plays().is_empty():
-		p = offense_plays()[0]
-	return p
-
-
-func defense_play_or_first(play_name: String) -> DefensivePlay:
-	var p := defense_play(play_name)
-	if p == null and not defense_plays().is_empty():
-		p = defense_plays()[0]
-	return p
 
 
 func kick(play_name: String) -> KickPlay:

@@ -29,13 +29,9 @@ Ratings are 1-6. Skills (Soft Hands, Pass Rusher, Ball Hawk...) give re-rolls or
 - `tests/playbook_check.gd` checks the stock playbook is legal and that illegal formations are caught
 - `tests/playbook_editor_check.gd` checks user playbooks start legal, save and reload, and that the
   editor screens build
-- `tests/team_playbook_check.gd` checks games use each team's assigned playbooks and the CPU only
-  calls plays its playbook has
 
 ## Adding a play
-Plays live in a `Playbook` (`scripts/sim/playbook.gd`). Each team runs the offensive and defensive
-playbooks picked on its roster screen (the stock playbook when none is picked, or when the picked one
-is deleted or has no legal plays); `GameState` resolves them at kickoff.
+Plays live in a `Playbook` (`scripts/sim/playbook.gd`); each team gets one through `GameState`.
 The building blocks are in `scripts/sim/plays/`:
 
 - `OffensiveFormation`: where the 11 players line up (`FormationSpot`s) and the plays run from it.
