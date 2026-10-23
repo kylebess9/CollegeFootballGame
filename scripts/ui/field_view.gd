@@ -14,6 +14,7 @@ var flip := false
 var preview := false # true while showing the pre-snap lineup
 var ghost_routes := false # with preview: overlay the lined-up play's routes as a faint ghost
 var ghost_defense := false # with preview: overlay the lined-up coverage's assignments
+var hide_defense := false # with preview: leave the defense off the field (the offense calls blind)
 var popups: Array[Dictionary] = [] # {text, pos (field), color, born}
 var clock := 0.0
 var font: Font
@@ -69,6 +70,8 @@ func _update_hover() -> void:
 		var reach := DOT_R * _scale + 5.0
 		var best := INF
 		for a in sim.actors:
+			if _hidden(a):
+				continue
 			var d := to_screen(a.pos).distance_to(mp)
 			if d <= reach and d < best:
 				best = d
@@ -327,6 +330,8 @@ func _draw_players() -> void:
 			draw_line(to_screen(a.pos), to_screen(a.engaged.pos), Color(1, 1, 1, 0.35), 3.0)
 	var lfs := int(maxf(8.0, _scale * 1.0))
 	for a in sim.actors:
+		if _hidden(a):
+			continue
 		var team: Team = sim.off_team if a.side == SimActor.Side.OFFENSE else sim.def_team
 		var col := team.color
 		var p := to_screen(a.pos)
@@ -351,6 +356,10 @@ func _draw_players() -> void:
 			var t := _letter(a)
 			var w := font.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, lfs).x
 			draw_string(font, p + Vector2(-w * 0.5, lfs * 0.38), t, HORIZONTAL_ALIGNMENT_LEFT, -1, lfs, Color(1, 1, 1, 0.95))
+
+
+func _hidden(a: SimActor) -> bool:
+	return preview and hide_defense and a.side == SimActor.Side.DEFENSE
 
 
 func _letter(a: SimActor) -> String:

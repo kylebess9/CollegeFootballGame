@@ -4,6 +4,7 @@ extends Control
 
 const FieldView := preload("res://scripts/ui/field_view.gd")
 const PlayerEditor := preload("res://scripts/ui/player_editor.gd")
+const PlayCaller := preload("res://scripts/ui/play_caller.gd")
 const SPEEDS := [0.5, 1.0, 2.0, 4.0]
 const POST_PLAY_PAUSE := 1.6
 
@@ -22,6 +23,7 @@ var editing := false # true while the debug player editor is open; suspends hove
 var call_title: Label
 var call_hint: Label
 var call_buttons: HFlowContainer
+var caller: PlayCaller
 var auto_check: CheckBox
 var speed_option: OptionButton
 var score_home: Label
@@ -178,6 +180,9 @@ func _build_call_panel() -> Control:
 	call_buttons.add_theme_constant_override("h_separation", 8)
 	call_buttons.add_theme_constant_override("v_separation", 8)
 	left.add_child(call_buttons)
+	caller = PlayCaller.new(call_title, call_hint, call_buttons)
+	caller.called.connect(_user_called)
+	caller.preview.connect(_on_caller_preview)
 
 	var right := VBoxContainer.new()
 	right.custom_minimum_size = Vector2(230, 0)
@@ -288,20 +293,22 @@ func _begin_snap() -> void:
 	state = "calling"
 	pending_off = ""
 	pending_def = ""
-	_show_lineup()
-	for c in call_buttons.get_children():
-		c.queue_free()
+	caller.clear()
 	var on_offense := gs.possession == me
-	# The CPU decides first. If it punts or kicks, the user has nothing to call.
+	# The CPU decides first. If it punts or kicks, the user has nothing to call. Its defense
+	# stays hidden from the user's offense until the snap; its offense lines up in the open,
+	# so the user's defense can pick a formation to match it (but its play stays hidden).
 	if not on_offense:
 		pending_off = CoachAI.pick_offense(gs, rng)
 		if gs.offense_playbook().is_kick(pending_off):
+			_show_lineup()
 			call_title.text = "%s: %s" % [gs.offense().school, pending_off]
 			call_hint.text = ""
 			_run_special(pending_off)
 			return
 	else:
 		pending_def = CoachAI.pick_defense(gs, rng)
+	_show_lineup()
 
 	if auto_check.button_pressed:
 		call_title.text = "Auto-calling..."
@@ -313,70 +320,68 @@ func _begin_snap() -> void:
 		return
 
 	if on_offense:
-		call_title.text = "YOUR OFFENSE: %s. Call a play." % gs.down_text()
-		call_hint.text = "Hover a play to see what it does. The CPU has already picked its defense."
-		var pb := gs.offense_playbook()
-		for name in pb.offense_names():
-			var b := UiStyle.button(name, pb.offense_play(name).description)
-			b.pressed.connect(_user_called.bind(name))
-			_hook_preview(b, name, "")
-			call_buttons.add_child(b)
-		var punt := pb.kick(Playbook.SPECIAL_PUNT)
-		var kb := UiStyle.button(punt.name, punt.description)
-		kb.pressed.connect(_user_called.bind(punt.name))
-		call_buttons.add_child(kb)
-		var t := gs.fg_target()
-		var fg_text := "Field Goal (%d yds, %s)" % [gs.fg_distance(), "out of range" if t >= 7 else "%d+" % Dice.clamp_target(t)]
-		var fg := pb.kick(Playbook.SPECIAL_FG)
-		var fb := UiStyle.button(fg_text, fg.description)
-		fb.pressed.connect(_user_called.bind(fg.name))
-		call_buttons.add_child(fb)
+		caller.extras = _kick_buttons
+		caller.note = "The defense lines up after you call your play."
+		caller.start(gs.offense_playbook(), Playbook.OFFENSE, "YOUR OFFENSE: %s." % gs.down_text())
 	else:
-		call_title.text = "YOUR DEFENSE: %s has %s. Call a coverage." % [gs.offense().school, gs.down_text()]
-		call_hint.text = "Hover a call to see its strengths. The CPU has already picked its play."
-		var dpb := gs.defense_playbook()
-		for name in dpb.defense_names():
-			var b := UiStyle.button(name, dpb.defense_play(name).description)
-			b.pressed.connect(_user_called.bind(name))
-			_hook_preview(b, "", name)
-			call_buttons.add_child(b)
+		caller.extras = Callable()
+		caller.note = "The CPU has already picked its play."
+		caller.start(gs.defense_playbook(), Playbook.DEFENSE,
+			"YOUR DEFENSE: %s has %s in %s." % [gs.offense().school, gs.down_text(), _cpu_formation()])
 
 
-## Shows both teams lined up at the ball while a play is being called. With off_play / def_play
-## set, the lineup uses that call's design and draws it as a ghost overlay (routes for the
-## offense; man lines, zones and blitz arrows for the defense).
-func _show_lineup(off_play: String = "", def_play: String = "") -> void:
+## The Punt and Field Goal buttons at the end of the offense's formation list.
+func _kick_buttons() -> Array[Button]:
+	var pb := gs.offense_playbook()
+	var punt := pb.kick(Playbook.SPECIAL_PUNT)
+	var kb := UiStyle.button(punt.name, punt.description)
+	kb.pressed.connect(_user_called.bind(punt.name))
+	var t := gs.fg_target()
+	var fg_text := "Field Goal (%d yds, %s)" % [gs.fg_distance(), "out of range" if t >= 7 else "%d+" % Dice.clamp_target(t)]
+	var fg := pb.kick(Playbook.SPECIAL_FG)
+	var fb := UiStyle.button(fg_text, fg.description)
+	fb.pressed.connect(_user_called.bind(fg.name))
+	return [kb, fb]
+
+
+## The formation the CPU's offense has lined up in.
+func _cpu_formation() -> String:
+	var p := gs.offense_playbook().offense_play(pending_off)
+	return p.formation.name if p != null and p.formation != null else "its formation"
+
+
+## Shows both teams lined up at the ball while a play is being called, with the user's side
+## in my_play's formation (the playbook's first play when empty). With ghost, my_play itself
+## is drawn as an overlay (routes for the offense; man lines, zones and blitz arrows for the
+## defense). The CPU's call is never drawn: its offense shows only its formation, and its
+## defense isn't shown at all while the user's offense is calling.
+func _show_lineup(my_play: String = "", ghost := false) -> void:
+	var on_offense := gs.possession == me
 	var p := PlaySim.new()
 	p.setup(gs.offense(), gs.defense(),
-		gs.offense_playbook().offense_play_or_first(off_play if off_play != "" else "Inside Run"),
-		gs.defense_playbook().defense_play_or_first(def_play if def_play != "" else "Cover 3"), gs.ball_on, gs.spot_y,
+		gs.offense_playbook().offense_play_or_first(my_play if on_offense else pending_off),
+		gs.defense_playbook().defense_play_or_first("" if on_offense else my_play), gs.ball_on, gs.spot_y,
 		gs.situation(), Dice.new(1))
 	if sim != null:
 		sim.dispose()
 	sim = p
 	field.sim = p
 	field.preview = true
-	field.ghost_routes = off_play != ""
-	field.ghost_defense = def_play != ""
+	field.ghost_routes = ghost and on_offense
+	field.ghost_defense = ghost and not on_offense
+	field.hide_defense = on_offense
 	field.flip = gs.possession == GameState.AWAY
 
 
-## Hovering a play button previews it on the field. Only the user's own call is ever drawn;
-## the CPU's call stays hidden behind the neutral placeholder lineup.
-func _hook_preview(b: Button, off_play: String, def_play: String) -> void:
-	b.mouse_entered.connect(func() -> void:
-		if state == "calling":
-			_show_lineup(off_play, def_play))
-	b.mouse_exited.connect(func() -> void:
-		if state == "calling" and (field.ghost_routes or field.ghost_defense):
-			_show_lineup())
+func _on_caller_preview(play_name: String, ghost: bool) -> void:
+	if state == "calling":
+		_show_lineup(play_name, ghost)
 
 
 func _user_called(call: String) -> void:
 	if state != "calling":
 		return
-	for c in call_buttons.get_children():
-		c.queue_free()
+	caller.clear()
 	if gs.possession == me:
 		pending_off = call
 	else:
@@ -423,6 +428,7 @@ func _start_play() -> void:
 	sim_was_run = gs.offense_playbook().is_run(pending_off)
 	sim_off_is_me = gs.possession == me
 	field.preview = false
+	field.hide_defense = false
 	events_shown = 0
 	accum = 0.0
 	field.sim = sim
