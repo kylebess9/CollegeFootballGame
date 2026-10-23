@@ -1,7 +1,8 @@
 extends SceneTree
 ## QB scrambling (the rollout):
 ##   godot --headless --script res://tests/scramble_check.gd
-## - every pressured QB slides away from the rush (only once pressured),
+## - every QB slides away from the rush once a free rusher gets within PlaySim.ROLLOUT_TRIGGER, and
+##   never drifts up toward the line while doing it,
 ## - out of the pocket, one under PlaySim.MIN_SCRAMBLE_SPEED never tucks and runs (he throws it
 ##   away or throws to someone open), a faster one sometimes runs,
 ## - a rolling QB keeps reading, and ends it with a throw, a tuck-and-run or a throw-away,
@@ -29,6 +30,7 @@ func _initialize() -> void:
 	var b := gen.make_team(1, Color.RED)
 	var pb := Playbook.make_default()
 
+	var max_forward := 0.0
 	var slow_rolls := 0
 	var fast_rolls := 0
 	var slow_runs := 0
@@ -47,6 +49,7 @@ func _initialize() -> void:
 				sim.setup(a, b, play, pb.defense_plays()[rep % pb.defense_plays().size()], 30.0, 26.6,
 					{"down": 1, "to_go": 10}, Dice.new(rep * 13 + 5))
 				var rolled := false
+				var roll_x := 0.0
 				var ran := false
 				var guard := 0
 				while not sim.done and guard < 900:
@@ -55,8 +58,12 @@ func _initialize() -> void:
 					if sim.qb_state == "scramble":
 						ran = true
 					if sim.qb_state == "rollout":
-						if not rolled and not sim.under_pressure:
-							rolled_unpressured += 1
+						if not rolled:
+							roll_x = sim.qb.pos.x
+							var threat := sim._nearest_free_opponent(sim.qb)
+							if threat == null or threat.pos.distance_to(sim.qb.pos) > PlaySim.ROLLOUT_TRIGGER + 1.0:
+								rolled_unpressured += 1
+						max_forward = maxf(max_forward, sim.qb.pos.x - roll_x)
 						rolled = true
 				if rolled:
 					if spd < PlaySim.MIN_SCRAMBLE_SPEED:
@@ -78,7 +85,8 @@ func _initialize() -> void:
 	_expect(slow_rolls > 0 and fast_rolls > 0, "slow and fast QBs both roll out when pressured")
 	_expect(slow_runs == 0, "a QB under the minimum scramble speed never tucks and runs")
 	_expect(fast_runs > 0, "a QB at or over it sometimes does")
-	_expect(rolled_unpressured == 0, "and only once pressured")
+	_expect(rolled_unpressured == 0, "and only once a rusher is close")
+	_expect(max_forward < 0.5, "and he never drifts up toward the line (most forward: %.2f yds)" % max_forward)
 	_expect(ends.size() > 1, "a rollout ends more than one way (throw, run, sack...)")
 	_expect(with_run > 0, "rollout throws are made on the run")
 
@@ -91,8 +99,11 @@ func _initialize() -> void:
 		for i in 20:
 			sim.step()
 		var rec: SimActor = sim.slots["O:" + play.reads[0]]
-		var toward := (sim._catch_point(rec) - sim.qb.pos).normalized()
-		sim.pending_move = toward * dir * 5.0 # running toward / directly away from the receiver
+		var gap := sim._catch_point(rec).y - sim.qb.pos.y
+		if absf(gap) < 3.0:
+			sim.qb.pos.y -= 5.0 # make sure the receiver is well across the field from him
+			gap = sim._catch_point(rec).y - sim.qb.pos.y
+		sim.pending_move = Vector2(0.0, signf(gap) * dir * 5.0) # running toward / away from the receiver's side
 		sim._release(rec, true)
 		var text := ""
 		for e in sim.events:

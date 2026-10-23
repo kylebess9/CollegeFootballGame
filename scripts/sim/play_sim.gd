@@ -41,10 +41,13 @@ const LOOSE_REACH := 0.8      # how close a player has to be to try to scoop up 
 const FAKE_READ_DEPTH := 10.0 # safeties lined up shallower than this read play-action fakes
 const OPEN_THRESHOLD := 1.8
 const MIN_SCRAMBLE_SPEED := 3 # out of the pocket, a QB with at least this Speed keeps going: he throws or runs. Slower ones throw it away
+const ROLLOUT_TRIGGER := 3.5  # a QB starts rolling out when a free rusher gets this close (before he's actually pressured)
+const ROLLOUT_MIN_TIME := 0.7 # ...but not before the line has had a moment to engage
 const ROLLOUT_SPEED := 0.85   # he rolls out at this fraction of his top speed
 const POCKET_HALF_WIDTH := 5.0 # past this far from the spot of the ball, he's out of the pocket
 const FAST_ROLLOUT_LOOK := 1.2 # a fast QB rolls on this long past the pocket, looking for a throw, before he must decide
 const SIDELINE_ROOM := 4.0    # a rolling QB must decide this close to the sideline
+const AWAY_MIN_GAP := 2.0     # ...when the target is at least this far across the field from him
 const AWAY_SPEED_LOSS := 0.2  # throwing back across a rollout loses this fraction of the pass speed...
 const AWAY_ACCURACY_PENALTY := 1 # ...and makes the accuracy roll this much harder
 const LANE_WIDTH := 2.0       # a defender this close to a receiver's path to the catch point is in his lane
@@ -108,8 +111,10 @@ var windup := 0.0
 var pending_rec: SimActor = null
 var pending_hurried := false
 var pending_away := false
+var threw_back := false # the last pass was thrown back across the QB's run
 var pending_move := Vector2.ZERO # the QB's velocity when he let it go, for throwing on the run
 var roll_side := 1.0 # which sideline a rolling QB heads for (+1 or -1 in y)
+var roll_dir := Vector2(0.0, 1.0) # the way he runs: away from the rusher, never up toward the line
 var roll_out_at := -1.0 # when the rolling QB got outside the pocket
 
 
@@ -574,7 +579,7 @@ func _qb_decide() -> void:
 		if qb.pos.distance_to(qb_set) < 0.4 and t >= pass_play.read_start:
 			qb_state = "read"
 			_start_read(0)
-		elif not under_pressure:
+		elif threat_dist >= ROLLOUT_TRIGGER or t < ROLLOUT_MIN_TIME:
 			return
 
 	var reads := pass_play.reads
@@ -587,7 +592,9 @@ func _qb_decide() -> void:
 			_log("QB under pressure, gets it out", qb.pos, -1)
 			_throw(best["actor"], true)
 			return
-		# Any pressured QB, fast or slow, slides away from the rusher to buy his receivers time.
+
+	if threat_dist < ROLLOUT_TRIGGER and t >= ROLLOUT_MIN_TIME:
+		# Any QB, fast or slow, slides away from the rusher to buy his receivers time.
 		_start_rollout(_rollout_side())
 		return
 
@@ -620,10 +627,10 @@ func _qb_decide() -> void:
 				_start_read(0)
 
 
-## The QB on the move with the ball, still reading. He throws as soon as someone is open (a
-## throw back across his run is harder). Once he's out of the pocket the speed check applies:
-## a slower QB throws it away; a faster one rolls on a little longer, then throws, tucks it and
-## runs if there's a lane, or throws it away.
+## The QB on the move with the ball, still reading. He keeps running until he is out of the
+## pocket, then the speed check applies: a slower QB throws it away; a faster one rolls on a
+## little longer, throwing as soon as someone is open (a throw back across his run is harder),
+## else tucking it and running if there's a lane, or throwing it away.
 func _rollout_decide() -> void:
 	if roll_out_at < 0.0 and absf(qb.pos.y - ball_y) > POCKET_HALF_WIDTH:
 		roll_out_at = t
@@ -634,7 +641,7 @@ func _rollout_decide() -> void:
 		_throw_away("Out of the pocket, Speed %d" % qb.r("spd"))
 		return
 	var best := _best_option()
-	if best["actor"] != null and float(best["open"]) >= OPEN_THRESHOLD - (0.6 if out else 0.2):
+	if out and best["actor"] != null and float(best["open"]) >= OPEN_THRESHOLD - 0.6:
 		_throw(best["actor"], true)
 		return
 	read_timer -= DT
@@ -650,7 +657,7 @@ func _rollout_decide() -> void:
 		must_decide = true
 	if not must_decide:
 		return
-	if fast and _scramble_lane():
+	if fast and _scramble_lane(roll_side):
 		_start_scramble("Speed %d" % qb.r("spd"))
 	else:
 		_throw_away("")
@@ -671,6 +678,11 @@ func _rollout_side() -> float:
 func _start_rollout(side: float) -> void:
 	qb_state = "rollout"
 	roll_side = side
+	roll_dir = Vector2(0.0, side)
+	var threat := _nearest_free_opponent(qb)
+	if threat != null:
+		var away := (qb.pos - threat.pos).normalized()
+		roll_dir = Vector2(minf(away.x, 0.0) * 0.6, side).normalized()
 	roll_out_at = -1.0
 	qb.job = "rollout"
 	_log("%s slides away from the rush" % qb.tag(), qb.pos, -1, "", "Rolls out")
@@ -814,12 +826,19 @@ func _best_option(max_dist: float = 999.0) -> Dictionary:
 	return {"actor": best_actor, "open": best_open}
 
 
-func _scramble_lane() -> bool:
+## Whether the QB has room to tuck it and run. A rolling QB (side != 0) runs upfield toward his
+## sideline, so only defenders ahead of him on that side count, not the one chasing from behind.
+func _scramble_lane(side: float = 0.0) -> bool:
 	for d in defenders():
 		if not d.is_free():
 			continue
 		var rel := d.pos - qb.pos
-		if rel.x > -1.0 and rel.x < 6.0 and absf(rel.y) < 4.0:
+		if rel.x <= -0.5 or rel.x >= 4.0:
+			continue
+		if side == 0.0:
+			if absf(rel.y) < 2.5:
+				return false
+		elif rel.y * side > -1.5 and rel.y * side < 3.5:
 			return false
 	return true
 
@@ -868,8 +887,9 @@ func _release(rec: SimActor, hurried: bool) -> void:
 		mod -= 1
 	# Throwing back across the way he was running is harder and weaker.
 	var away := false
-	if pending_move.length() > 0.5:
-		away = pending_move.normalized().dot((land - qb.pos).normalized()) < -0.2
+	if absf(pending_move.y) > 1.0 and absf(land.y - qb.pos.y) > AWAY_MIN_GAP:
+		away = pending_move.y * (land.y - qb.pos.y) < 0.0
+	threw_back = away
 	if away:
 		mod += AWAY_ACCURACY_PENALTY
 	var res := _test(qb, 7 - qb.r("pas") + mod, "Accuracy (%s, %d yds%s%s)" % [range_name, int(dist),
@@ -975,7 +995,7 @@ func _desired(a: SimActor) -> Vector2:
 				return a.pos
 			return qb_set
 		"rollout":
-			return a.pos + Vector2(0.4, roll_side).normalized() * 4.0
+			return a.pos + roll_dir * 4.0
 		"idle":
 			return a.pos
 		"loose":
