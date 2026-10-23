@@ -58,6 +58,10 @@ godot --headless --script res://tests/balance_test.gd
 - `tests/play_action_check.gd` — play-action fakes: linebackers and shallow safeties read the
   fake in both the stock 4-3 and a custom front with non-standard slot names; deep safeties and
   corners don't. Run it after touching the play-action logic in `play_sim.gd`.
+- `tests/team_playbook_check.gd` — playbooks assigned to a team on its roster screen: games use
+  them, the CPU only calls plays the playbook has (CoachAI's pools name stock plays and fall back
+  to a play of the same type), and a deleted or broken playbook falls back to stock. Run it after
+  touching `coach_ai.gd`, `team.gd` or how `GameState` picks playbooks.
 - `tests/redzone_check.gd` — regression test: scans every play for scoring/boundary bugs
   (a play ending in the end zone without being scored as a TD, a catch/interception recorded
   out of bounds). Extend this file's checks when you fix a new class of edge-case bug, so it
