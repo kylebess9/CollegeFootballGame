@@ -97,6 +97,12 @@ func to_screen(p: Vector2) -> Vector2:
 	return _origin + q * _scale
 
 
+## Screen pixels back to field coordinates (as the sim sees them).
+func to_field(screen: Vector2) -> Vector2:
+	var q := (screen - _origin) / _scale
+	return Vector2(FIELD_LEN - q.x, FIELD_W - q.y) if flip else q
+
+
 func _layout() -> void:
 	_scale = minf(size.x / FIELD_LEN, size.y / FIELD_W)
 	_origin = (size - Vector2(FIELD_LEN, FIELD_W) * _scale) * 0.5

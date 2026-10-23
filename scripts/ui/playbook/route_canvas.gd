@@ -5,6 +5,8 @@ extends Control
 ## click to add it, right-click a point to remove it. Drawn like a playbook diagram: the
 ## receiver at the bottom on the line of scrimmage, downfield up the screen, and the
 ## sideline to the right (the sim mirrors routes for receivers on the left).
+## The editing works through to_screen() / to_route(), so a subclass can put the same handles
+## somewhere else (PlayRouteOverlay puts them on the playbook editor's field).
 
 signal changed
 
@@ -80,14 +82,19 @@ func point_at(screen: Vector2) -> int:
 	return -1
 
 
-## Moves a point. Returns false if it would land on top of its neighbor.
+## Moves a point. Returns false if it's already there or would land on top of its neighbor.
 func move_point(i: int, to: Vector2) -> bool:
-	var path := _path()
-	if path[i].is_equal_approx(to) or (i + 2 < path.size() and path[i + 2].is_equal_approx(to)):
+	if not can_move(i, to):
 		return false
 	route.points[i] = to
 	changed.emit()
 	return true
+
+
+func can_move(i: int, to: Vector2) -> bool:
+	var path := _path()
+	return not (route.points[i].is_equal_approx(to) or path[i].is_equal_approx(to)
+		or (i + 2 < path.size() and path[i + 2].is_equal_approx(to)))
 
 
 ## Adds a point at `at`, between path points `index` and `index + 1` (so it becomes
@@ -132,6 +139,8 @@ func _gui_input(event: InputEvent) -> void:
 				_dragging = _ghost_index
 				_ghost_index = -1
 				_ghost = Vector2.INF
+			else:
+				_clicked_off(event.position)
 		elif event.button_index == MOUSE_BUTTON_RIGHT and i >= 0:
 			remove_point(i)
 		queue_redraw()
@@ -149,6 +158,11 @@ func _gui_input(event: InputEvent) -> void:
 			mouse_default_cursor_shape = Control.CURSOR_DRAG if _hover_point >= 0 \
 				else (Control.CURSOR_POINTING_HAND if _ghost_index >= 0 else Control.CURSOR_ARROW)
 		queue_redraw()
+
+
+## A left click away from the route's points and lines.
+func _clicked_off(_at: Vector2) -> void:
+	pass
 
 
 func _notification(what: int) -> void:
@@ -204,8 +218,12 @@ func _draw_route() -> void:
 	# The receiver.
 	draw_circle(to_screen(Vector2.ZERO), 0.9 * _scale, Color("#4ea1ff"))
 	draw_arc(to_screen(Vector2.ZERO), 0.9 * _scale, 0, TAU, 24, Color(0, 0, 0, 0.6), 1.5)
-	if not editable:
-		return
+	if editable:
+		_draw_points()
+
+
+## The numbered points, and the new point that a click would add.
+func _draw_points() -> void:
 	for i in route.points.size():
 		var p := to_screen(route.points[i])
 		var hot := i == _hover_point or i == _dragging

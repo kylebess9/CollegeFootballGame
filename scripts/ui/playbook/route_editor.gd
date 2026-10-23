@@ -155,6 +155,8 @@ func _on_rename(t: String) -> void:
 		return
 	if n == "":
 		_error.text = "Give the route a name."
+	elif n.to_lower() == Route.CUSTOM.to_lower():
+		_error.text = "\"%s\" is kept for routes drawn for one player in one play." % Route.CUSTOM
 	elif playbook.all_route_names().has(n):
 		_error.text = "There's already a route called %s." % n
 	else:

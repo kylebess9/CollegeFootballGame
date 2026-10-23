@@ -9,6 +9,8 @@ extends Resource
 
 const STOP := "stop"
 const GO := "go"
+## The name of a route drawn for one player in one play, rather than picked from the tree.
+const CUSTOM := "Custom"
 
 @export var name := ""
 @export var points: Array[Vector2] = []

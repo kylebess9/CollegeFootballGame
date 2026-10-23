@@ -90,6 +90,9 @@ func _build_pass(p: PassPlay) -> void:
 		p.play_action = on
 		_edited())
 	_left.add_child(pa)
+	var tip := UiStyle.label("Click a route runner on the field to reshape his route for this play only.", 12, UiStyle.MUTED)
+	tip.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_left.add_child(tip)
 
 	# Linemen always block, so they aren't listed. Routes on the left, the QB's read order
 	# on the right.
@@ -117,7 +120,7 @@ func _route_option(p: PassPlay, slot: String) -> OptionButton:
 	var names := playbook.all_route_names() if playbook != null else Playbook.route_names()
 	var custom_route: Route = p.routes.get(slot)
 	if custom_route != null and not custom_route.name in names:
-		names.append(custom_route.name) # a route that isn't in the stock tree
+		names.append(custom_route.name) # drawn for this play (Route.CUSTOM), or a deleted route
 	for r in names:
 		opt.add_item(r)
 	opt.select(names.find(p.job(slot)) + 1)

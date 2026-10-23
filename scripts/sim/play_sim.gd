@@ -184,9 +184,7 @@ func _build_offense(play: OffensivePlay) -> void:
 
 
 func _assign_route(a: SimActor, r: Route) -> void:
-	var outside := 1.0 if a.start_pos.y >= ball_y else -1.0
-	if a.slot == "RB":
-		outside = float(run_side)
+	var outside := route_side(a)
 	a.job = "route"
 	a.path.clear()
 	for p in r.points:
@@ -195,6 +193,14 @@ func _assign_route(a: SimActor, r: Route) -> void:
 		pt.x = minf(pt.x, END_LINE_STOP)
 		a.path.append(pt)
 	a.path_end = r.end
+
+
+## Which way "toward the sideline" is for this player's route: 1 toward y = FIELD_W, -1
+## toward y = 0. Routes are mirrored for receivers left of the ball; the RB goes to his run side.
+func route_side(a: SimActor) -> float:
+	if a.slot == "RB":
+		return float(run_side)
+	return 1.0 if a.start_pos.y >= ball_y else -1.0
 
 
 ## Pass catchers (WR/TE) split out to one side, widest first. side is -1 for the offense's

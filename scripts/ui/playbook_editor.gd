@@ -2,7 +2,8 @@ extends Control
 ## Edit one playbook. Laid out like match_screen / practice_screen, with two views:
 ##   Edit playbook  - the playbook's name in the top left, the field in the middle showing
 ##                    the selected play's art, the formations and their plays on the right,
-##                    and the selected play's options along the bottom.
+##                    and the selected play's options along the bottom. Clicking a route
+##                    runner on the field lets his route be reshaped for that play alone.
 ##   Edit formation - the formation builder: a close-up field to drag players around on,
 ##                    the players still to place along the bottom, and whether the
 ##                    formation is legal on the right.
@@ -28,6 +29,7 @@ var _highlight_slot := "" # the player whose drop-down the mouse is over # the f
 
 var gs: GameState # only feeds FieldView/PlaySim the two teams and the ball spot
 var field: FieldView
+var route_overlay: PlayRouteOverlay
 var formation_list: FormationList
 var options: PlayOptions
 var add_dialog: AddPlayDialog
@@ -90,6 +92,11 @@ func _build_ui() -> void:
 	field.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	field.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	mid.add_child(field)
+	route_overlay = PlayRouteOverlay.new()
+	route_overlay.field = field
+	route_overlay.changed.connect(_on_route_drawn)
+	route_overlay.customized.connect(func() -> void: options.show_play(selected_play)) # "Custom"
+	field.add_child(route_overlay)
 
 	var side := VBoxContainer.new()
 	side.custom_minimum_size = Vector2(390, 0)
@@ -202,6 +209,7 @@ func _build_header() -> Control:
 
 func select_play(p: Resource) -> void:
 	selected_play = p
+	route_overlay.select("")
 	formation_list.select(p)
 	options.show_play(p)
 	_draw_play()
@@ -212,6 +220,7 @@ func select_play(p: Resource) -> void:
 func _draw_play() -> void:
 	_clear_sim()
 	if selected_play == null:
+		route_overlay.attach(null, null)
 		return
 	var off_call: OffensivePlay
 	var def_call: DefensivePlay
@@ -228,6 +237,7 @@ func _draw_play() -> void:
 	field.ghost_routes = is_offense()
 	field.ghost_defense = not is_offense()
 	field.flip = false
+	route_overlay.attach(selected_play, sim)
 	_highlight_player(_highlight_slot) # keep pointing him out after an edit redraws the play
 
 
@@ -250,6 +260,12 @@ func _clear_sim() -> void:
 func _on_play_edited() -> void:
 	_draw_play()
 	formation_list.rebuild() # the Pass / PA Pass tag can change
+	_save()
+
+
+## A route reshaped on the field: the play holds it, so just redraw and save.
+func _on_route_drawn() -> void:
+	_draw_play()
 	_save()
 
 
