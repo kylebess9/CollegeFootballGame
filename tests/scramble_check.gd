@@ -1,7 +1,9 @@
 extends SceneTree
 ## QB scrambling (the rollout):
 ##   godot --headless --script res://tests/scramble_check.gd
-## - a QB under PlaySim.MIN_SCRAMBLE_SPEED never rolls out, a faster one does (only once pressured),
+## - every pressured QB slides away from the rush (only once pressured),
+## - out of the pocket, one under PlaySim.MIN_SCRAMBLE_SPEED never tucks and runs (he throws it
+##   away or throws to someone open), a faster one sometimes runs,
 ## - a rolling QB keeps reading, and ends it with a throw, a tuck-and-run or a throw-away,
 ## - a throw back across the run is penalized and says so, and one with the run is not,
 ## - the pocket rules still hold: a QB who rolls out and is hit behind the line is sacked.
@@ -29,6 +31,8 @@ func _initialize() -> void:
 
 	var slow_rolls := 0
 	var fast_rolls := 0
+	var slow_runs := 0
+	var fast_runs := 0
 	var rolled_unpressured := 0
 	var ends := {}
 	var with_run := 0
@@ -43,10 +47,13 @@ func _initialize() -> void:
 				sim.setup(a, b, play, pb.defense_plays()[rep % pb.defense_plays().size()], 30.0, 26.6,
 					{"down": 1, "to_go": 10}, Dice.new(rep * 13 + 5))
 				var rolled := false
+				var ran := false
 				var guard := 0
 				while not sim.done and guard < 900:
 					sim.step()
 					guard += 1
+					if sim.qb_state == "scramble":
+						ran = true
 					if sim.qb_state == "rollout":
 						if not rolled and not sim.under_pressure:
 							rolled_unpressured += 1
@@ -54,7 +61,9 @@ func _initialize() -> void:
 				if rolled:
 					if spd < PlaySim.MIN_SCRAMBLE_SPEED:
 						slow_rolls += 1
+						slow_runs += 1 if ran else 0
 					else:
+						fast_runs += 1 if ran else 0
 						fast_rolls += 1
 						var kind: String = sim.result.get("kind", "?")
 						ends[kind] = int(ends.get(kind, 0)) + 1
@@ -65,8 +74,10 @@ func _initialize() -> void:
 								with_run += 1
 				sim.dispose()
 	print("  rollouts at speed >= min: ", fast_rolls, " ends: ", ends)
-	_expect(slow_rolls == 0, "a QB under the minimum scramble speed never rolls out")
-	_expect(fast_rolls > 0, "a QB at or over it does")
+	print("  rollouts at speed < min: ", slow_rolls, " tucked and ran: ", slow_runs, "; at or over: ", fast_rolls, " ran: ", fast_runs)
+	_expect(slow_rolls > 0 and fast_rolls > 0, "slow and fast QBs both roll out when pressured")
+	_expect(slow_runs == 0, "a QB under the minimum scramble speed never tucks and runs")
+	_expect(fast_runs > 0, "a QB at or over it sometimes does")
 	_expect(rolled_unpressured == 0, "and only once pressured")
 	_expect(ends.size() > 1, "a rollout ends more than one way (throw, run, sack...)")
 	_expect(with_run > 0, "rollout throws are made on the run")

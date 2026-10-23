@@ -40,10 +40,10 @@ const BOBBLE_STALL := 0.6     # a receiver who bobbles it and stays up stands st
 const LOOSE_REACH := 0.8      # how close a player has to be to try to scoop up a loose ball
 const FAKE_READ_DEPTH := 10.0 # safeties lined up shallower than this read play-action fakes
 const OPEN_THRESHOLD := 1.8
-const MIN_SCRAMBLE_SPEED := 3 # a QB needs at least this Speed to roll out of the pocket when pressured
+const MIN_SCRAMBLE_SPEED := 3 # out of the pocket, a QB with at least this Speed keeps going: he throws or runs. Slower ones throw it away
 const ROLLOUT_SPEED := 0.85   # he rolls out at this fraction of his top speed
 const POCKET_HALF_WIDTH := 5.0 # past this far from the spot of the ball, he's out of the pocket
-const ROLLOUT_LOOK := 0.7     # seconds he looks for a throw once out of the pocket before he must decide
+const FAST_ROLLOUT_LOOK := 1.2 # a fast QB rolls on this long past the pocket, looking for a throw, before he must decide
 const SIDELINE_ROOM := 4.0    # a rolling QB must decide this close to the sideline
 const AWAY_SPEED_LOSS := 0.2  # throwing back across a rollout loses this fraction of the pass speed...
 const AWAY_ACCURACY_PENALTY := 1 # ...and makes the accuracy roll this much harder
@@ -99,7 +99,6 @@ var read_timer := 0.0
 var read_time := 0.0 # how long the current read lasts in all (read_timer counts it down)
 var read_noise := 0.0
 var under_pressure := false
-var pressure_decided := false
 var handed_off := false
 var run_side := 1
 var run_side_fixed := false # true when the RB lines up off to one side, so he always goes that way
@@ -588,24 +587,8 @@ func _qb_decide() -> void:
 			_log("QB under pressure, gets it out", qb.pos, -1)
 			_throw(best["actor"], true)
 			return
-		if not pressure_decided and qb.r("spd") >= MIN_SCRAMBLE_SPEED:
-			# A mobile QB doesn't wait on the pocket to collapse: he rolls out to buy his
-			# receivers time, if there's room on that side.
-			var side := _rollout_side()
-			if side != 0.0:
-				pressure_decided = true
-				_start_rollout(side)
-				return
-		if not pressure_decided:
-			pressure_decided = true
-			var res := _test(qb, 7 - qb.r("awr"), "Pocket poise (Awareness)")
-			if res["ok"]:
-				if _scramble_lane():
-					_start_scramble(res["detail"])
-				else:
-					_throw_away(res["detail"])
-				return
-			_log("QB holds the ball too long", qb.pos, 0, res["detail"], "Holds it")
+		# Any pressured QB, fast or slow, slides away from the rusher to buy his receivers time.
+		_start_rollout(_rollout_side())
 		return
 
 	if qb_state != "read":
@@ -638,13 +621,18 @@ func _qb_decide() -> void:
 
 
 ## The QB on the move with the ball, still reading. He throws as soon as someone is open (a
-## throw back across his run is harder). Once he's out of the pocket, or his progression runs
-## out, he has to decide: tuck it and run if there's a lane, else throw it away.
+## throw back across his run is harder). Once he's out of the pocket the speed check applies:
+## a slower QB throws it away; a faster one rolls on a little longer, then throws, tucks it and
+## runs if there's a lane, or throws it away.
 func _rollout_decide() -> void:
-	var side_gap := absf(qb.pos.y - ball_y)
-	if roll_out_at < 0.0 and side_gap > POCKET_HALF_WIDTH:
+	if roll_out_at < 0.0 and absf(qb.pos.y - ball_y) > POCKET_HALF_WIDTH:
 		roll_out_at = t
 	var out := roll_out_at >= 0.0
+	var fast := qb.r("spd") >= MIN_SCRAMBLE_SPEED
+	var near_sideline := qb.pos.y < SIDELINE_ROOM or qb.pos.y > FIELD_W - SIDELINE_ROOM
+	if out and not fast:
+		_throw_away("Out of the pocket, Speed %d" % qb.r("spd"))
+		return
 	var best := _best_option()
 	if best["actor"] != null and float(best["open"]) >= OPEN_THRESHOLD - (0.6 if out else 0.2):
 		_throw(best["actor"], true)
@@ -657,43 +645,27 @@ func _rollout_decide() -> void:
 		else:
 			exhausted = true
 			_start_read(0)
-	var near_sideline := qb.pos.y < SIDELINE_ROOM or qb.pos.y > FIELD_W - SIDELINE_ROOM
-	var must_decide := near_sideline or t > 4.5 or (out and (exhausted or t - roll_out_at >= ROLLOUT_LOOK))
+	var must_decide := t > 4.5 or (near_sideline and fast) or (out and (exhausted or t - roll_out_at >= FAST_ROLLOUT_LOOK))
+	if near_sideline and not fast:
+		must_decide = true
 	if not must_decide:
 		return
-	if _scramble_lane():
-		_start_scramble("")
+	if fast and _scramble_lane():
+		_start_scramble("Speed %d" % qb.r("spd"))
 	else:
 		_throw_away("")
 
 
-## Which way a pressured QB rolls: away from the nearest rusher, or the other way if that
-## side is blocked. 0.0 when neither side has a lane.
+## Which way a pressured QB slides: away from the nearest rusher, or the other way when
+## that would put him on the sideline.
 func _rollout_side() -> float:
 	var threat := _nearest_free_opponent(qb)
-	var first := 1.0 if qb.pos.y < ball_y or threat == null else -1.0
+	var side := 1.0 if qb.pos.y < FIELD_W * 0.5 else -1.0
 	if threat != null and absf(threat.pos.y - qb.pos.y) > 0.3:
-		first = -signf(threat.pos.y - qb.pos.y)
-	elif qb.pos.y >= FIELD_W * 0.5:
-		first = -1.0
-	for side in [first, -first]:
-		if _rollout_lane(side):
-			return side
-	return 0.0
-
-
-## Whether the QB can get out to this side: no free defender ahead of him or beside him that
-## way, within a few yards. Defenders who are downfield (or behind him on the other side) don't count.
-func _rollout_lane(side: float) -> bool:
+		side = -signf(threat.pos.y - qb.pos.y)
 	if qb.pos.y + side * (SIDELINE_ROOM + 2.0) < 0.0 or qb.pos.y + side * (SIDELINE_ROOM + 2.0) > FIELD_W:
-		return false
-	for d in defenders():
-		if not d.is_free():
-			continue
-		var rel := d.pos - qb.pos
-		if rel.x > -1.5 and rel.x < 5.0 and rel.y * side > -1.0 and rel.y * side < 7.0:
-			return false
-	return true
+		side = -side
+	return side
 
 
 func _start_rollout(side: float) -> void:
@@ -701,7 +673,7 @@ func _start_rollout(side: float) -> void:
 	roll_side = side
 	roll_out_at = -1.0
 	qb.job = "rollout"
-	_log("%s rolls out of the pocket" % qb.tag(), qb.pos, 1, "Speed %d" % qb.r("spd"), "Rolls out")
+	_log("%s slides away from the rush" % qb.tag(), qb.pos, -1, "", "Rolls out")
 	_start_read(0)
 
 

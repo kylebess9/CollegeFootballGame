@@ -89,7 +89,9 @@ func _throws(a: Team, b: Team, pb: Playbook, dice: Dice) -> Dictionary:
 						elif sim.ball_quality == "away":
 							pass
 						elif sim.pending_hurried:
-							st["hurried"].append(sim.ball_speed)
+							# Throws on the run can lose more (back across it): scramble_check covers those.
+							if sim.pending_move.length() <= 0.5:
+								st["hurried"].append(sim.ball_speed)
 						else:
 							st["clean"].append(sim.ball_speed)
 				sim.dispose()
