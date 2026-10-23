@@ -55,6 +55,9 @@ godot --headless --script res://tests/balance_test.gd
   edits save and reload, and the editor screens build and can be clicked through. Run it after
   touching the playbook classes, `playbook_store.gd` or the editor UI. It saves to
   `user://test_playbooks`, never the user's own playbooks.
+- `tests/play_action_check.gd` — play-action fakes: linebackers and shallow safeties read the
+  fake in both the stock 4-3 and a custom front with non-standard slot names; deep safeties and
+  corners don't. Run it after touching the play-action logic in `play_sim.gd`.
 - `tests/redzone_check.gd` — regression test: scans every play for scoring/boundary bugs
   (a play ending in the end zone without being scored as a TD, a catch/interception recorded
   out of bounds). Extend this file's checks when you fix a new class of edge-case bug, so it

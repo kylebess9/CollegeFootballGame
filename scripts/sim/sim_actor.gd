@@ -10,6 +10,7 @@ var id := 0
 var player: FootballPlayer
 var side := Side.OFFENSE
 var slot := ""
+var position := "" # the formation spot's position (QB, LB, S...), not the player's own
 var pos := Vector2.ZERO
 var start_pos := Vector2.ZERO
 var vel := Vector2.ZERO
