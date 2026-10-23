@@ -31,7 +31,7 @@ const ATTR_HELP := {
 ## Skills work like Blood Bowl skills: small, specific advantages that matter in certain matchups.
 const SKILLS := {
 	"Soft Hands": "Re-roll a failed catch.",
-	"Ball Security": "Re-roll a failed roll to hold on to the ball when hit.",
+	"Ball Security": "Re-roll a failed roll to hold on to the ball when hit, or to scoop up a loose ball.",
 	"Elusive": "Tacklers need +1 on their tackle roll against this player.",
 	"Sure Tackler": "Re-roll a failed tackle.",
 	"Pass Rusher": "+1 Strength when rushing the passer.",

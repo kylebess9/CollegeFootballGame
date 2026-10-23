@@ -7,7 +7,8 @@ extends RefCounted
 ## y = 0..53.33 across the field. The screen flips this when the away team has the ball.
 ##
 ## Movement is automatic. Dice decide the contested moments:
-##   blocks (block dice), throws (accuracy), catches, interceptions, tackles, play-action bites, fumbles.
+##   blocks (block dice), throws (accuracy), catches, interceptions, tackles, play-action bites, fumbles,
+##   scooping up a loose ball.
 
 const DT := 1.0 / 30.0
 const FIELD_LEN := 120.0
@@ -24,7 +25,11 @@ const BLOCK_INTERVAL := 1.0
 const ASSIST_RANGE := 2.0
 const BALL_SPEED := 21.0
 const CATCH_REACH := 1.6
-const HANDOFF_TIME := 0.55
+const HANDOFF_TIME := 0.55    # when a play-action fake happens, and when the defense reads a run
+const HANDOFF_RADIUS := 2.5   # on a run the RB must get this close to the QB for a handoff...
+const HANDOFF_MIN_TIME := 0.3 # ...no sooner than this after the snap, else (RunPlay.time_delay) it's a pitch
+const PITCH_CATCH := 2        # a pitch is caught on this or better, with a free re-roll
+const LOOSE_REACH := 0.8      # how close a player has to be to try to scoop up a loose ball
 const FAKE_READ_DEPTH := 10.0 # safeties lined up shallower than this read play-action fakes
 const OPEN_THRESHOLD := 1.8
 const MAX_TIME := 20.0
@@ -63,7 +68,10 @@ var ball_flight_time := 0.0
 var ball_target: SimActor = null
 var ball_quality := "good" # good / bad / duck / away
 var thrown_at := -1.0
+var pitched := false # the ball in the air is a pitch on a run, not a pass
+var ball_loose := false # fumbled backward pass on the ground, up for grabs
 var turnover := false
+var turnover_kind := "int" # result kind when a turnover's return is tackled
 
 # QB brain
 var qb: SimActor
@@ -268,7 +276,8 @@ func _build_defense(play: DefensivePlay) -> void:
 			a.run_first = true
 
 	if is_run:
-		# Defenders figure out it's a run after the handoff, depending on Awareness.
+		# Defenders figure out it's a run after the handoff, depending on Awareness (later, if
+		# the QB holds it longer: _defense_sees_run).
 		for d in defenders():
 			d.pursue_at = HANDOFF_TIME + d.react_time * 1.5
 			if d.run_first:
@@ -455,14 +464,24 @@ func step() -> void:
 
 
 func _handle_snap_events() -> void:
-	if is_run and not handed_off and t >= HANDOFF_TIME:
-		handed_off = true
+	if is_run and not handed_off and holder == qb:
 		var rb: SimActor = slots["O:RB"]
-		holder = rb
-		rb.job = "carry"
-		qb_state = "handed_off"
-		qb.job = "idle"
-		_log("%s takes the handoff" % rb.tag(), rb.pos, -1, "", "")
+		if t >= HANDOFF_MIN_TIME and rb.is_up() and rb.pos.distance_to(qb.pos) <= HANDOFF_RADIUS:
+			handed_off = true
+			holder = rb
+			rb.job = "carry"
+			qb_state = "handed_off"
+			qb.job = "idle"
+			_log("%s takes the handoff" % rb.tag(), rb.pos, -1, "", "")
+			_defense_sees_run()
+		elif t >= (off_play as RunPlay).time_delay:
+			# The RB never got to him in time: pitch it.
+			handed_off = true
+			pitched = true
+			ball_quality = "pitch"
+			_log("%s pitches it to %s" % [qb.tag(), rb.tag()], qb.pos, -1, "", "Pitch")
+			_launch(_catch_point(rb), rb)
+			_defense_sees_run()
 	if play_action and not handed_off and t >= HANDOFF_TIME:
 		handed_off = true
 		_log("Play-action fake!", qb.pos)
@@ -478,6 +497,13 @@ func _handle_snap_events() -> void:
 					d.bite_until = t + 0.9
 					_log("%s bites on the fake" % d.tag(), d.pos, 1, res["detail"], "Bit!")
 		slots["O:RB"].job = "block"
+
+
+## Defenders can't be sure it's a run until the ball goes to the RB: a QB who holds it past
+## the usual handoff time (a late pitch) holds them off as long.
+func _defense_sees_run() -> void:
+	for d in defenders():
+		d.pursue_at = maxf(d.pursue_at, t + (0.1 if d.run_first else d.react_time * 1.5))
 
 
 ## Whether a defender has to read a play-action fake: linebackers, and safeties lined up
@@ -763,6 +789,8 @@ func _desired(a: SimActor) -> Vector2:
 			return qb_set
 		"idle":
 			return a.pos
+		"loose":
+			return ball_pos
 		"fake":
 			return qb.pos + Vector2(0.5, float(run_side) * 1.0)
 		"rb_run":
@@ -979,7 +1007,7 @@ func _rush_target(d: SimActor) -> Vector2:
 	if holder != null:
 		return holder.pos
 	if ball_in_air:
-		return d.pos
+		return ball_to if pitched else d.pos
 	return qb.pos
 
 
@@ -1169,6 +1197,9 @@ func _update_ball() -> void:
 	if holder != null:
 		ball_pos = holder.pos
 		return
+	if ball_loose:
+		_try_pickup()
+		return
 	if not ball_in_air:
 		return
 	ball_flight += DT
@@ -1183,8 +1214,14 @@ func _resolve_catch() -> void:
 	if ball_target == null:
 		_end_incomplete("Pass incomplete (thrown away)")
 		return
+	# A pass that lands behind where it was thrown from is a backward pass: if nobody catches
+	# it, it's a live ball (a fumble), not an incompletion.
+	var backward := ball_to.x < ball_from.x
 	if not _in_bounds(ball_to):
-		_end_incomplete("Pass incomplete, out of bounds")
+		if backward:
+			_dead_ball(ball_to, "Backward pass goes out of bounds")
+		else:
+			_end_incomplete("Pass incomplete, out of bounds")
 		return
 	# A defender can only try to intercept if he gets to the ball before the receiver does.
 	var rec := ball_target
@@ -1215,10 +1252,19 @@ func _resolve_catch() -> void:
 		_log("%s gets a hand on it" % best_d.tag(), best_d.pos, 0, res["detail"], "Breakup")
 
 	if not rec.is_up() or rec_dist > CATCH_REACH:
-		_end_incomplete("Pass incomplete, %s can't reach it" % rec.tag())
+		if backward:
+			_fumble_loose(ball_to, "%s can't reach the backward pass" % rec.tag(), "")
+		else:
+			_end_incomplete("Pass incomplete, %s can't reach it" % rec.tag())
 		return
 	if not _in_bounds(rec.pos):
-		_end_incomplete("Pass incomplete, %s is out of bounds" % rec.tag())
+		if backward:
+			_dead_ball(rec.pos, "%s is out of bounds, ball dead" % rec.tag())
+		else:
+			_end_incomplete("Pass incomplete, %s is out of bounds" % rec.tag())
+		return
+	if pitched:
+		_catch_pitch(rec, backward)
 		return
 	var marks := 0
 	for d in defenders():
@@ -1236,7 +1282,10 @@ func _resolve_catch() -> void:
 		label = label.trim_suffix(")") + ", tipped)"
 	var res2 := _test(rec, 7 - rec.r("hnd") + mod2, label, "Soft Hands")
 	if not res2["ok"]:
-		_end_incomplete("Pass incomplete, dropped by %s" % rec.tag(), res2["detail"])
+		if backward:
+			_fumble_loose(ball_to, "%s drops the backward pass" % rec.tag(), res2["detail"])
+		else:
+			_end_incomplete("Pass incomplete, dropped by %s" % rec.tag(), res2["detail"])
 		return
 	_log("Caught by %s" % rec.tag(), rec.pos, 1, res2["detail"], "Caught")
 	rec.pos = ball_to
@@ -1253,6 +1302,106 @@ func _resolve_catch() -> void:
 		d.pursue_at = minf(d.pursue_at, t if covering_him else t + d.react_time)
 	if rec.pos.x >= OPP_GOAL:
 		_touchdown(rec)
+
+
+## A pitch is an easy catch: PITCH_CATCH+, and a miss always gets a second try. The RB
+## keeps running his designed path once he has it.
+func _catch_pitch(rec: SimActor, backward: bool) -> void:
+	var roll := dice.d6()
+	var detail := "Pitch catch: needs %d+, rolled %d" % [PITCH_CATCH, roll]
+	if roll < PITCH_CATCH:
+		roll = dice.d6()
+		detail += ", re-roll %d" % roll
+	if roll < PITCH_CATCH:
+		if backward:
+			_fumble_loose(ball_to, "%s drops the pitch" % rec.tag(), detail)
+		else:
+			_end_incomplete("Pitch dropped by %s" % rec.tag(), detail)
+		return
+	_log("%s gathers in the pitch" % rec.tag(), rec.pos, 1, detail, "")
+	rec.pos = ball_to
+	holder = rec
+	rec.job = "carry"
+	if rec.pos.x >= OPP_GOAL:
+		_touchdown(rec)
+
+
+## A dropped backward pass: the ball hits the ground and scatters, and both sides go after it.
+func _fumble_loose(at: Vector2, text: String, detail: String) -> void:
+	ball_loose = true
+	holder = null
+	ball_in_air = false
+	ball_pos = at
+	_log("FUMBLE! %s" % text, at, 0, detail, "Fumble!")
+	for a in actors:
+		a.disengage()
+		a.job = "loose"
+	_scatter_ball(dice.rng.randf_range(1.0, 3.0))
+
+
+## The loose ball bounces `dist` yards in a random direction, like the Blood Bowl scatter template.
+func _scatter_ball(dist: float) -> void:
+	ball_pos += dice.scatter(dist)
+	if not _in_bounds(ball_pos):
+		_dead_ball(ball_pos, "The ball rolls out of bounds")
+
+
+## The closest player to a loose ball tries to scoop it up: (7 - Agility)+, one harder for each
+## opponent marking him. A miss knocks it another yard away.
+func _try_pickup() -> void:
+	var best: SimActor = null
+	var best_dist := LOOSE_REACH
+	for a in actors:
+		if not a.is_up() or a.tackle_cooldown > 0.0:
+			continue
+		var dist := a.pos.distance_to(ball_pos)
+		if dist <= best_dist:
+			best_dist = dist
+			best = a
+	if best == null:
+		return
+	var marks := 0
+	for o in opponents_of(best):
+		if o.is_free() and o.pos.distance_to(best.pos) <= ZONE_RANGE:
+			marks += 1
+	var label := "Scoop up the ball (Agility%s)" % (", %d marking him" % marks if marks > 0 else "")
+	var res := _test(best, 7 - best.r("agi") + marks, label, "Ball Security")
+	if not res["ok"]:
+		best.tackle_cooldown = 0.6
+		_log("%s can't pick it up" % best.tag(), ball_pos, -1, res["detail"], "Bobbled")
+		_scatter_ball(1.0)
+		return
+	ball_loose = false
+	holder = best
+	if best.side == SimActor.Side.DEFENSE:
+		_log("Recovered by %s!" % best.tag(), ball_pos, 0, res["detail"], "Recovered!")
+		turnover_kind = "fumble"
+		_start_turnover(best)
+		return
+	_log("%s falls on it, offense keeps the ball" % best.tag(), ball_pos, 1, res["detail"], "Recovered")
+	best.job = "carry"
+	best.path.clear()
+	for a in actors:
+		if a == best:
+			continue
+		if a.side == best.side:
+			a.job = "block"
+			a.block_target = null
+		else:
+			a.job = "pursue"
+			a.pursue_at = t + a.react_time
+
+
+## The ball is dead where it went out (a backward pass or a loose ball out of bounds); the
+## offense keeps it there, unless that's in its own end zone.
+func _dead_ball(at: Vector2, text: String) -> void:
+	_log(text, at, -1)
+	var x := minf(at.x, OPP_GOAL - 0.5)
+	if x <= OWN_GOAL:
+		_finish({"kind": "safety", "end_x": x, "turnover": false, "clock_stops": true, "text": "SAFETY!"})
+		return
+	_finish({"kind": "oob", "end_x": x, "end_y": clampf(at.y, 0.0, FIELD_W), "turnover": false,
+		"clock_stops": true, "text": text})
 
 
 func _start_turnover(new_holder: SimActor) -> void:
@@ -1379,11 +1528,14 @@ func _touchdown(c: SimActor) -> void:
 
 func _end_tackled(c: SimActor, note: String, oob := false) -> void:
 	if c == null:
-		_end_incomplete("Whistle")
+		if ball_loose:
+			_dead_ball(ball_pos, "Whistle, the ball is dead")
+		else:
+			_end_incomplete("Whistle")
 		return
 	var x := c.pos.x
 	if turnover:
-		_finish({"kind": "int", "end_x": x, "turnover": true, "clock_stops": true,
+		_finish({"kind": turnover_kind, "end_x": x, "turnover": true, "clock_stops": true,
 			"text": "Turnover, return ends at the spot"})
 		return
 	# Hit after crossing the goal line still counts: the ball broke the plane.
@@ -1424,5 +1576,5 @@ func _finish(r: Dictionary) -> void:
 	if not r.has("end_y"):
 		r["end_y"] = holder.pos.y if holder != null else ball_y
 	r["duration"] = t
-	r["thrown"] = thrown_at >= 0.0
+	r["thrown"] = thrown_at >= 0.0 and not pitched
 	result = r

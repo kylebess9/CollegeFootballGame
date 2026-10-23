@@ -66,6 +66,10 @@ godot --headless --script res://tests/balance_test.gd
   a back button) on the practice and match screens, and that in a game the user's offense never
   sees the CPU defense before the snap. Run it after touching `play_caller.gd` or how either
   screen calls plays.
+- `tests/handoff_check.gd` — run plays: a handoff when the RB reaches the QB within the run play's
+  `time_delay` (`PlaySim.HANDOFF_RADIUS`), a pitch otherwise (caught on 2+ with a re-roll, never
+  counted as a pass), and a dropped pass or pitch behind the QB is a loose-ball fumble. Run it after
+  touching the handoff, catch or loose-ball code in `play_sim.gd`.
 - `tests/redzone_check.gd` — regression test: scans every play for scoring/boundary bugs
   (a play ending in the end zone without being scored as a TD, a catch/interception recorded
   out of bounds). Extend this file's checks when you fix a new class of edge-case bug, so it

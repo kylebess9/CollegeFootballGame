@@ -177,7 +177,10 @@ func _build_run(p: RunPlay) -> void:
 		p.run_path = RunPlay.PATHS[i]
 		_edited())
 	_left.add_child(_row("Run path", opt, "Inside: between the tackles. Outside: to the edge."))
-	var note := UiStyle.label("The RB takes the handoff; everyone else blocks.", 13, UiStyle.MUTED)
+	_left.add_child(_spin_row("Handoff wait (sec)", p.time_delay, RunPlay.MIN_TIME_DELAY, RunPlay.MAX_TIME_DELAY, 0.05,
+		"How long the QB waits for the RB to reach him. If he isn't there in time, the QB pitches it to him.",
+		func(v: float) -> void: p.time_delay = v))
+	var note := UiStyle.label("The RB takes the handoff, or a pitch if he's late; everyone else blocks.", 13, UiStyle.MUTED)
 	_right.add_child(note)
 
 
