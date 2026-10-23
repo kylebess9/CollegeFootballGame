@@ -4,9 +4,10 @@ extends Control
 ##                    the selected play's art, the formations and their plays on the right,
 ##                    and the selected play's options along the bottom. Clicking a route
 ##                    runner on the field lets his route be reshaped for that play alone.
-##                    Run Play plays the selected play out on the field; an offensive play
-##                    runs against the defense picked next to it (None by default, for no
-##                    defenders at all).
+##                    Run Play plays the selected play out on the field, against the other
+##                    side's stock play picked next to it: a defense (or None, for no
+##                    defenders at all, the default) for an offensive play, an offensive play
+##                    for a defensive one. Hovering that picker draws the other side's play too.
 ##   Edit formation - the formation builder: a close-up field to drag players around on,
 ##                    the players still to place along the bottom, and whether the
 ##                    formation is legal on the right.
@@ -54,9 +55,13 @@ var route_editor: RouteEditor
 var sim: PlaySim
 ## The opposite side's play the preview lines up against, from the stock playbook.
 var stock := Playbook.make_default()
-## Offense only: the defense to line up against, picked in the header. Item 0 is None.
-var defense_pick: OptionButton
-var _defenses: Array[DefensivePlay] = [] # item i + 1
+## The other side's stock play to line up against, picked in the header.
+var opponent_pick: OptionButton
+var _opponents: Array[Resource] = [] # one per item of opponent_pick
+## While the mouse is over the picker: its item to line up against instead of the picked one
+## (-1 for the picked one), with the other side's art drawn too.
+var _preview_index := -1
+var _show_opponent := false
 ## The "None" defense: a formation with nobody in it, kept here since plays hold it weakly.
 var _no_defense_formation := DefensiveFormation.make("None", [] as Array[FormationSpot])
 var _no_defense := _no_defense_formation.add_play(DefensivePlay.make("None", "", [] as Array[CoverageAssignment]))
@@ -217,17 +222,8 @@ func _build_header() -> Control:
 	run_button.disabled = true # until a play is picked
 	run_button.pressed.connect(run_play)
 	h.add_child(run_button)
+	h.add_child(_build_opponent_pick())
 	if is_offense():
-		defense_pick = OptionButton.new()
-		defense_pick.tooltip_text = "The defense the play lines up and runs against. None takes every defender off the field."
-		defense_pick.add_item("Defense: None")
-		for f in stock.defensive_formations:
-			for p in f.plays:
-				defense_pick.add_item("%s: %s" % [f.name, p.name])
-				_defenses.append(p)
-		defense_pick.select(0)
-		defense_pick.item_selected.connect(func(_i: int) -> void: _draw_play())
-		h.add_child(defense_pick)
 		var routes := UiStyle.button("Playbook Routes")
 		routes.tooltip_text = "See the stock routes and draw this playbook's own."
 		routes.pressed.connect(func() -> void: route_editor.open(playbook))
@@ -236,6 +232,48 @@ func _build_header() -> Control:
 	back.pressed.connect(main.show_playbooks)
 	h.add_child(back)
 	return panel
+
+
+## The other side's stock plays. Offense lines up against None (no defenders) by default or a
+## stock defensive call; defense against a stock offensive play, Four Verticals by default.
+## The pick stays as the user moves between plays.
+func _build_opponent_pick() -> OptionButton:
+	opponent_pick = OptionButton.new()
+	if is_offense():
+		opponent_pick.tooltip_text = "The defense the play lines up and runs against. None takes every defender off the field."
+		opponent_pick.add_item("Defense: None")
+		_opponents.append(_no_defense)
+		for f in stock.defensive_formations:
+			for p in f.plays:
+				opponent_pick.add_item("%s: %s" % [f.name, p.name])
+				_opponents.append(p)
+	else:
+		opponent_pick.tooltip_text = "The offensive play the defense lines up and runs against."
+		for f in stock.offensive_formations:
+			for p in f.plays:
+				opponent_pick.add_item("%s: %s" % [f.name, p.name])
+				_opponents.append(p)
+	opponent_pick.select(maxi(0, _opponents.find(stock.offense_play("Four Verticals"))) if not is_offense() else 0)
+	opponent_pick.item_selected.connect(func(_i: int) -> void: _draw_play())
+	# Hovering the picker (or an item in its open list) draws that play's art as well.
+	var popup := opponent_pick.get_popup()
+	opponent_pick.mouse_entered.connect(func() -> void: preview_opponent(-1, true))
+	opponent_pick.mouse_exited.connect(func() -> void:
+		if not popup.visible:
+			preview_opponent(-1, false))
+	popup.id_focused.connect(func(id: int) -> void: preview_opponent(popup.get_item_index(id), true))
+	popup.popup_hide.connect(func() -> void: preview_opponent(-1, false))
+	return opponent_pick
+
+
+## Lines the selected play up against the picker's item `index` (-1: the picked one) and
+## draws the other side's art too while `show` is on. Leaves a running play alone.
+func preview_opponent(index: int, show: bool) -> void:
+	if running or (index == _preview_index and show == _show_opponent):
+		return
+	_preview_index = index
+	_show_opponent = show
+	_draw_play()
 
 
 # ---------------------------------------------------------------- selecting and drawing plays
@@ -259,8 +297,8 @@ func _draw_play() -> void:
 		return
 	_line_up(Dice.new(1))
 	field.preview = true
-	field.ghost_routes = is_offense()
-	field.ghost_defense = not is_offense()
+	field.ghost_routes = is_offense() or _show_opponent
+	field.ghost_defense = not is_offense() or _show_opponent
 	field.flip = false
 	route_overlay.attach(selected_play, sim)
 	_highlight_player(_highlight_slot) # keep pointing him out after an edit redraws the play
@@ -268,23 +306,17 @@ func _draw_play() -> void:
 
 ## A new sim of the selected play against the other side's call, shown on the field.
 func _line_up(dice: Dice) -> void:
-	var off_call: OffensivePlay
-	var def_call: DefensivePlay
-	if is_offense():
-		off_call = selected_play as OffensivePlay
-		def_call = opponent_defense()
-	else:
-		off_call = stock.offense_play("Four Verticals")
-		def_call = selected_play as DefensivePlay
+	var opp := opponent_play(_preview_index)
+	var off_call: OffensivePlay = selected_play if is_offense() else opp
+	var def_call: DefensivePlay = opp if is_offense() else selected_play
 	sim = PlaySim.new()
 	sim.setup(gs.teams[0], gs.teams[1], off_call, def_call, gs.ball_on, gs.spot_y, gs.situation(), dice)
 	field.sim = sim
 
 
-## The defense an offensive play lines up against: the header's pick, or nobody.
-func opponent_defense() -> DefensivePlay:
-	var i := defense_pick.selected if defense_pick != null else 0
-	return _defenses[i - 1] if i > 0 else _no_defense
+## The other side's play at the picker's item `index`, or the picked one for -1.
+func opponent_play(index := -1) -> Resource:
+	return _opponents[index if index >= 0 else opponent_pick.selected]
 
 
 ## Plays the selected play out from the snap. The dice are fresh each time, so it can go
@@ -292,6 +324,8 @@ func opponent_defense() -> DefensivePlay:
 func run_play() -> void:
 	if selected_play == null or run_button.disabled:
 		return
+	_preview_index = -1
+	_show_opponent = false
 	_clear_sim()
 	route_overlay.attach(null, null) # nothing to edit while players move
 	_line_up(Dice.new(randi()))

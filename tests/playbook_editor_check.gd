@@ -420,20 +420,51 @@ func _run_through_ui(ed: Node) -> void:
 	await process_frame
 	_expect(not ed.run_button.disabled, "%s: and on once one is" % pb.name)
 	if ed.is_offense():
-		_expect(ed.defense_pick.selected == 0 and ed.sim.defenders().is_empty(),
+		_expect(ed.opponent_pick.selected == 0 and ed.sim.defenders().is_empty(),
 			"the defense starts as None: no defenders on the field")
 		var stock_calls := 0
 		for f in Playbook.defense_packages():
 			stock_calls += f.plays.size()
-		_expect(ed.defense_pick.item_count == stock_calls + 1, "the defense list is None plus every stock call")
-		ed.defense_pick.select(1)
-		ed.defense_pick.item_selected.emit(1)
+		_expect(ed.opponent_pick.item_count == stock_calls + 1, "the defense list is None plus every stock call")
+		ed.opponent_pick.select(1)
+		ed.opponent_pick.item_selected.emit(1)
 		_expect(ed.sim.defenders().size() == 11, "picking a defense lines it up")
 		ed.select_play(plays[1])
-		_expect(ed.defense_pick.selected == 1 and ed.sim.def_play == ed.opponent_defense()
+		_expect(ed.opponent_pick.selected == 1 and ed.sim.def_play == ed.opponent_play()
 			and ed.sim.defenders().size() == 11, "the defense stays picked moving to another play")
-		ed.defense_pick.select(0)
-		ed.defense_pick.item_selected.emit(0)
+		ed.opponent_pick.select(0)
+		ed.opponent_pick.item_selected.emit(0)
+	else:
+		var stock_plays := 0
+		for f in Playbook.offense_packages():
+			stock_plays += f.plays.size()
+		_expect(ed.opponent_pick.item_count == stock_plays and ed.sim.off_play.name == "Four Verticals",
+			"defense: the offense list is every stock play, starting on Four Verticals")
+		var i := 0
+		while ed.opponent_play(i).name != "Inside Run":
+			i += 1
+		ed.opponent_pick.select(i)
+		ed.opponent_pick.item_selected.emit(i)
+		ed.select_play(plays[0])
+		_expect(ed.sim.off_play.name == "Inside Run", "defense: the picked offensive play stays picked")
+	# Hovering the picker draws the other side's art; an item in its open list lines that one up.
+	var own_ghost: bool = ed.field.ghost_routes if ed.is_offense() else ed.field.ghost_defense
+	var their_ghost := func() -> bool: return ed.field.ghost_defense if ed.is_offense() else ed.field.ghost_routes
+	_expect(own_ghost and not their_ghost.call(), "%s: only the play's own art is drawn" % pb.name)
+	ed.opponent_pick.mouse_entered.emit()
+	_expect(their_ghost.call(), "%s: hovering the picker draws the other side's play" % pb.name)
+	var picked: int = ed.opponent_pick.selected
+	var other := 2 if picked != 2 else 3
+	ed.opponent_pick.get_popup().id_focused.emit(other)
+	var shown: Resource = ed.sim.def_play if ed.is_offense() else ed.sim.off_play
+	_expect(shown == ed.opponent_play(other) and ed.opponent_pick.selected == picked and their_ghost.call(),
+		"%s: hovering an item in the list lines that play up" % pb.name)
+	ed.opponent_pick.get_popup().popup_hide.emit()
+	shown = ed.sim.def_play if ed.is_offense() else ed.sim.off_play
+	_expect(shown == ed.opponent_play() and not their_ghost.call(), "%s: and leaving goes back to the picked play" % pb.name)
+	ed.opponent_pick.mouse_entered.emit()
+	ed.opponent_pick.mouse_exited.emit()
+	_expect(not their_ghost.call(), "%s: the other side's art goes when the mouse leaves" % pb.name)
 	for p in plays.slice(0, 3):
 		ed.select_play(p)
 		ed.run_play()
