@@ -7,6 +7,7 @@ const FIELD_LEN := 120.0
 const FIELD_W := 53.333
 const DOT_R := 0.85
 const POPUP_LIFE := 1.8
+const READ_COLOR := Color("#4fd1ff") # the QB's current read and his read clock
 
 var gs: GameState
 var sim: PlaySim
@@ -22,6 +23,10 @@ var hovered: SimActor = null
 ## A player to point out (e.g. the one whose options are being edited): drawn with a
 ## pulsing ring.
 var highlighted: SimActor = null
+## Shows the QB's progression while a pass play runs: the route he's reading lit up, and a
+## small clock by him counting down his wait before the first read, then each read. Always
+## on in debug mode; the playbook editor turns it on for itself.
+var show_qb_reads := false
 
 ## Emitted whenever the player under the mouse changes (null when none).
 signal hover_changed(actor: SimActor)
@@ -124,6 +129,8 @@ func _draw() -> void:
 				_draw_ghost_routes()
 		_draw_players()
 		if not preview:
+			if _qb_reads_on():
+				_draw_read_clock()
 			_draw_ball()
 	_draw_popups()
 
@@ -204,18 +211,21 @@ func _draw_markers() -> void:
 ## develops (players can then be seen breaking off their route, e.g. to go get a thrown ball).
 var _routes_for: PlaySim = null
 var _routes: Array = [] # each entry: PackedVector2Array of field points
+var _route_owners: Array = [] # the SimActor running each entry of _routes
 
 
 func _capture_routes() -> void:
 	_routes_for = sim
-	_routes = _route_lines(false)
+	_route_owners = []
+	_routes = _route_lines(false, _route_owners)
 
 
 ## One PackedVector2Array of field points per route runner / ball carrier. For the ghost
 ## preview, a designed run is extended a few yards upfield (past it the back is on his own),
 ## and when the RB lines up directly behind the ball his path is also added mirrored across
-## it, since which side he goes to is then a coin flip at the snap.
-func _route_lines(ghost: bool) -> Array:
+## it, since which side he goes to is then a coin flip at the snap. Fills `owners`, if given,
+## with the player each line belongs to.
+func _route_lines(ghost: bool, owners: Array = []) -> Array:
 	var lines := []
 	for a in sim.actors:
 		if a.side != SimActor.Side.OFFENSE or a.path.is_empty():
@@ -235,21 +245,59 @@ func _route_lines(ghost: bool) -> Array:
 		elif ghost and a == sim.runner:
 			pts.append(pts[pts.size() - 1] + Vector2(4.0, 0))
 		lines.append(pts)
+		owners.append(a)
 		if ghost and (a.slot == "RB" or a == sim.runner) and not sim.run_side_fixed:
 			var flipped := PackedVector2Array()
 			for p in pts:
 				flipped.append(Vector2(p.x, clampf(2.0 * sim.ball_y - p.y, 1.0, FIELD_W - 1.0)))
 			lines.append(flipped)
+			owners.append(a)
 	return lines
 
 
 func _draw_routes() -> void:
 	if _routes_for != sim:
 		_capture_routes()
-	for pts in _routes:
+	var read := sim.current_read() if _qb_reads_on() else null
+	for k in _routes.size():
+		var pts: PackedVector2Array = _routes[k]
+		var lit: bool = read != null and _route_owners[k] == read
 		for i in range(1, pts.size()):
-			var alpha := 0.12 if i == pts.size() - 1 and pts.size() > 2 else 0.22
-			draw_line(to_screen(pts[i - 1]), to_screen(pts[i]), Color(1, 1, 1, alpha), 2.0)
+			if lit:
+				var a := 0.55 if i == pts.size() - 1 and pts.size() > 2 else 0.95
+				draw_line(to_screen(pts[i - 1]), to_screen(pts[i]), Color(READ_COLOR, a), 4.0)
+			else:
+				var alpha := 0.12 if i == pts.size() - 1 and pts.size() > 2 else 0.22
+				draw_line(to_screen(pts[i - 1]), to_screen(pts[i]), Color(1, 1, 1, alpha), 2.0)
+	if read != null and read.is_up() and not _hidden(read):
+		draw_arc(to_screen(read.pos), (DOT_R + 0.9) * _scale, 0, TAU, 28, READ_COLOR, 2.5)
+
+
+## The Settings autoload is looked up by path rather than by name, so this script still
+## compiles when a test preloads it before the autoloads exist.
+func _qb_reads_on() -> bool:
+	if show_qb_reads:
+		return true
+	var settings := get_node_or_null("/root/Settings")
+	return settings != null and settings.debug_mode
+
+
+## The QB's read clock: a small pie by him that empties as time runs out. Gray while he
+## waits out the play's read_start, the read color while he's on a read (it refills each
+## time he moves to the next one).
+func _draw_read_clock() -> void:
+	var clock_state := sim.read_clock()
+	if clock_state.is_empty() or sim.qb == null:
+		return
+	var left: float = clock_state["left"]
+	var col := READ_COLOR if clock_state["phase"] == "read" else Color(0.85, 0.85, 0.85)
+	var r := maxf(6.0, _scale * 0.95)
+	var c := to_screen(sim.qb.pos) + Vector2(-1.0, -1.0) * (DOT_R * _scale + r + 2.0)
+	draw_circle(c, r + 1.5, Color(0, 0, 0, 0.55))
+	if left > 0.0:
+		# A thick arc half the radius out fills the pie slice, from 12 o'clock clockwise.
+		draw_arc(c, r * 0.5, -PI * 0.5, -PI * 0.5 + TAU * left, maxi(3, int(32 * left)), Color(col, 0.9), r)
+	draw_arc(c, r, 0, TAU, 24, Color(col, 0.9), 1.5)
 
 
 ## Pre-snap preview of a play being hovered in the call menu: dashed translucent lines
