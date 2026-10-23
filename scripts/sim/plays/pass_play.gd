@@ -68,6 +68,15 @@ func set_route(slot: String, r: Route) -> void:
 		reads.append(slot)
 
 
+## Moves a route runner to `rank` (1 = first read) in the QB's progression; everyone
+## else keeps their order around him.
+func set_read_priority(slot: String, rank: int) -> void:
+	if not slot in reads:
+		return
+	reads.erase(slot)
+	reads.insert(clampi(rank - 1, 0, reads.size()), slot)
+
+
 ## Keeps a player in to block.
 func set_block(slot: String) -> void:
 	routes.erase(slot)
