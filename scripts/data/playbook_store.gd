@@ -70,6 +70,9 @@ static func _next_number(dir: String) -> int:
 	return n + 1
 
 
+## Removes the playbook's file. Its path is cleared too, so a team still holding it (and a
+## new playbook that later reuses the file name) can tell it's gone.
 static func delete(pb: Playbook) -> void:
 	if pb.resource_path != "":
 		DirAccess.remove_absolute(pb.resource_path)
+		pb.resource_path = ""
