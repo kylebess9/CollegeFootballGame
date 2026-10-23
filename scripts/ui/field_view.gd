@@ -207,8 +207,8 @@ func _capture_routes() -> void:
 
 ## One PackedVector2Array of field points per route runner / ball carrier. For the ghost
 ## preview, a designed run is extended a few yards upfield (past it the back is on his own),
-## and the RB's path is also added mirrored across the ball, since which side he goes to is
-## a coin flip at the snap.
+## and when the RB lines up directly behind the ball his path is also added mirrored across
+## it, since which side he goes to is then a coin flip at the snap.
 func _route_lines(ghost: bool) -> Array:
 	var lines := []
 	for a in sim.actors:
@@ -229,7 +229,7 @@ func _route_lines(ghost: bool) -> Array:
 		elif ghost and a.job == "rb_run":
 			pts.append(pts[pts.size() - 1] + Vector2(4.0, 0))
 		lines.append(pts)
-		if ghost and a.slot == "RB":
+		if ghost and a.slot == "RB" and not sim.run_side_fixed:
 			var flipped := PackedVector2Array()
 			for p in pts:
 				flipped.append(Vector2(p.x, clampf(2.0 * sim.ball_y - p.y, 1.0, FIELD_W - 1.0)))

@@ -76,6 +76,7 @@ var under_pressure := false
 var pressure_decided := false
 var handed_off := false
 var run_side := 1
+var run_side_fixed := false # true when the RB lines up off to one side, so he always goes that way
 var windup := 0.0
 var pending_rec: SimActor = null
 var pending_hurried := false
@@ -155,6 +156,14 @@ func _build_offense(play: OffensivePlay) -> void:
 		var a := _add(off_team, O, spot.slot, p, Vector2(los + spot.offset.x, _clamp_y(c + spot.offset.y)))
 		a.position = spot.position
 		a.job = "qb" if spot.slot == play.formation.snap_slot else "block"
+
+	# A back lined up in the snap lane behind the ball can go either way (the coin flip in setup);
+	# one offset to a side always goes to the side he's on: runs, swing routes and PA fakes.
+	if slots.has("O:RB"):
+		var off_y: float = slots["O:RB"].start_pos.y - c
+		if absf(off_y) > OffensiveFormation.SNAP_LANE:
+			run_side = 1 if off_y > 0.0 else -1
+			run_side_fixed = true
 
 	if is_run:
 		var rb: SimActor = slots["O:RB"]
