@@ -17,6 +17,7 @@ signal player_hovered(slot: String)
 
 const ReadOrderList := preload("res://scripts/ui/playbook/read_order_list.gd")
 const BLOCK_LABEL := "Pass Block"
+const CUSTOM_LABEL := "Custom"
 const MAN_LABEL := "Man"
 const BLITZ_LABEL := "Blitz"
 
@@ -169,18 +170,50 @@ func _rebuild() -> void:
 # ---------------------------------------------------------------- run
 
 func _build_run(p: RunPlay) -> void:
-	var opt := OptionButton.new()
+	# Inside / Outside give the carrier the stock path; "Custom" is one drawn on the field.
+	var paths: Array[String] = []
 	for path in RunPlay.PATHS:
-		opt.add_item(path.capitalize())
-	opt.select(RunPlay.PATHS.find(p.run_path))
+		paths.append(path.capitalize())
+	if p.has_custom_path():
+		paths.append(CUSTOM_LABEL)
+	var opt := OptionButton.new()
+	for label in paths:
+		opt.add_item(label)
+	opt.select(paths.size() - 1 if p.has_custom_path() else RunPlay.PATHS.find(p.run_path))
 	opt.item_selected.connect(func(i: int) -> void:
+		if i >= RunPlay.PATHS.size():
+			return # Custom: already his path
 		p.run_path = RunPlay.PATHS[i]
-		_edited())
-	_left.add_child(_row("Run path", opt, "Inside: between the tackles. Outside: to the edge."))
+		p.path.clear()
+		_edited()
+		_rebuild.call_deferred())
+	_left.add_child(_row("Run path", opt, "Inside: between the tackles. Outside: to the edge. Custom: drawn on the field."))
 	_left.add_child(_spin_row("Handoff wait (sec)", p.time_delay, RunPlay.MIN_TIME_DELAY, RunPlay.MAX_TIME_DELAY, 0.05,
-		"How long the QB waits for the RB to reach him. If he isn't there in time, the QB pitches it to him.",
+		"How long the QB waits for the ball carrier to reach him. If he isn't there in time, the QB pitches it to him.",
 		func(v: float) -> void: p.time_delay = v))
-	var note := UiStyle.label("The RB takes the handoff, or a pitch if he's late; everyone else blocks.", 13, UiStyle.MUTED)
+
+	# The ball carrier: any QB, RB, TE or WR in the formation.
+	var carriers: Array[String] = []
+	for s in p.formation.spots:
+		if s.position in RunPlay.CARRIER_POSITIONS:
+			carriers.append(s.slot)
+	var who := OptionButton.new()
+	for slot in carriers:
+		who.add_item("%s  (%s)" % [slot, p.formation.spot(slot).position])
+	who.select(carriers.find(p.ball_carrier()))
+	who.item_selected.connect(func(i: int) -> void:
+		p.carrier = carriers[i]
+		p.path.clear() # a path drawn for someone else doesn't fit him
+		_edited()
+		_rebuild.call_deferred())
+	var cell := _player_cell(p.ball_carrier(), "ball carrier", who)
+	_right.add_child(cell)
+	var keeper := p.ball_carrier() == p.formation.snap_slot
+	var note := UiStyle.label(("The QB keeps it and runs it himself" if keeper
+		else "%s takes the handoff, or a pitch if he's late" % p.ball_carrier())
+		+ "; everyone else blocks. Click him on the field to reshape his path for this play.", 13, UiStyle.MUTED)
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	note.custom_minimum_size = Vector2(360, 0)
 	_right.add_child(note)
 
 

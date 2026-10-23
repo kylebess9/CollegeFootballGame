@@ -5,10 +5,13 @@ extends RouteCanvas
 ## line between two points and click) and right-click away, as in Playbook Routes. The first
 ## change makes the route the play's own (PassPlay.customize()), so the playbook's routes are
 ## left alone and his drop-down shows "Custom"; picking a route there swaps it back out.
+## A run play's ball carrier works the same way: the first change gives the play his path
+## (RunPlay.path, starting from the stock one shown), and its run path drop-down shows
+## "Custom" until Inside or Outside is picked again.
 
-## The player clicked on, "" when the click wasn't on a route runner.
+## The player clicked on, "" when the click wasn't on a route runner or the ball carrier.
 signal player_selected(slot: String)
-## The selected player's route has just become the play's own.
+## The selected player's route (or run path) has just become the play's own.
 signal customized
 
 const FieldView := preload("res://scripts/ui/field_view.gd")
@@ -16,7 +19,7 @@ const FieldView := preload("res://scripts/ui/field_view.gd")
 const SIDELINE_MARGIN := 1.5
 
 var field: FieldView # the field this lies over
-var play: PassPlay
+var play: OffensivePlay # a PassPlay or RunPlay
 var sim: PlaySim
 var slot := ""
 var _actor: SimActor
@@ -31,7 +34,7 @@ func _ready() -> void:
 ## Points the overlay at the play as the field now shows it. Call it after every redraw of
 ## the play, since that sets up a new sim.
 func attach(p: Resource, s: PlaySim) -> void:
-	play = p as PassPlay
+	play = p as OffensivePlay
 	sim = s
 	_refresh()
 
@@ -50,10 +53,14 @@ func select(s: String) -> void:
 func _refresh() -> void:
 	route = null
 	_actor = null
-	if play != null and sim != null and play.routes.has(slot) and sim.slots.has("O:" + slot):
+	if play != null and sim != null and slot in _editable_slots() and sim.slots.has("O:" + slot):
 		_actor = sim.slots["O:" + slot]
-		_side = sim.route_side(_actor)
-		route = play.routes[slot]
+		if play is RunPlay:
+			_side = 1.0 # run paths aren't mirrored
+			route = _run_route()
+		else:
+			_side = sim.route_side(_actor)
+			route = play.routes[slot]
 	editable = route != null
 	if not editable:
 		_dragging = -1
@@ -67,9 +74,30 @@ func slot_at(screen: Vector2) -> String:
 		return ""
 	var reach := (FieldView.DOT_R + 0.5) * _yard()
 	for a in sim.offense():
-		if play.routes.has(a.slot) and field.to_screen(a.pos).distance_to(screen) <= reach:
+		if a.slot in _editable_slots() and field.to_screen(a.pos).distance_to(screen) <= reach:
 			return a.slot
 	return ""
+
+
+## Who can be clicked: the route runners on a pass, the ball carrier on a run.
+func _editable_slots() -> Array:
+	if play is RunPlay:
+		return [play.ball_carrier()]
+	if play is PassPlay:
+		return play.routes.keys()
+	return []
+
+
+## The ball carrier's path as a route to edit: the play's own path (the same array, so edits
+## land in the play), or else the stock path the sim gave him, from where he lines up.
+func _run_route() -> Route:
+	var pts: Array[Vector2] = []
+	if play.has_custom_path():
+		pts = play.path
+	else:
+		for p in _actor.path:
+			pts.append(p - _actor.start_pos)
+	return Route.make(Route.CUSTOM if play.has_custom_path() else play.run_path, pts, Route.STOP)
 
 
 # ---------------------------------------------------------------- coordinates
@@ -118,9 +146,14 @@ func remove_point(i: int) -> bool:
 
 
 func _customize() -> void:
-	if route.name != Route.CUSTOM:
+	if route.name == Route.CUSTOM:
+		return
+	if play is RunPlay:
+		play.path = route.points # from now on the route's points are the play's path
+		route.name = Route.CUSTOM
+	else:
 		route = play.customize(slot)
-		customized.emit()
+	customized.emit()
 
 
 func _gui_input(event: InputEvent) -> void:

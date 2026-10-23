@@ -220,7 +220,7 @@ func _route_lines(ghost: bool) -> Array:
 	for a in sim.actors:
 		if a.side != SimActor.Side.OFFENSE or a.path.is_empty():
 			continue
-		if not (a.job == "route" or a.job == "rb_run"):
+		if not (a.job == "route" or a.job == "rb_run" or a == sim.runner):
 			continue
 		var pts := PackedVector2Array([a.start_pos])
 		pts.append_array(PackedVector2Array(a.path))
@@ -232,10 +232,10 @@ func _route_lines(ghost: bool) -> Array:
 			ext.y = clampf(ext.y, 1.0, FIELD_W - 1.0)
 			ext.x = minf(ext.x, PlaySim.END_LINE_STOP)
 			pts.append(ext)
-		elif ghost and a.job == "rb_run":
+		elif ghost and a == sim.runner:
 			pts.append(pts[pts.size() - 1] + Vector2(4.0, 0))
 		lines.append(pts)
-		if ghost and a.slot == "RB" and not sim.run_side_fixed:
+		if ghost and (a.slot == "RB" or a == sim.runner) and not sim.run_side_fixed:
 			var flipped := PackedVector2Array()
 			for p in pts:
 				flipped.append(Vector2(p.x, clampf(2.0 * sim.ball_y - p.y, 1.0, FIELD_W - 1.0)))

@@ -43,6 +43,9 @@ var center_slot := ""
 ## slot -> how far across they're drawn, over where that receiver usually is. Moving one
 ## pins him to the spot he's dropped on instead.
 var aligned := {}
+## New formations only: the first running back dragged on takes the slot name "RB", which is
+## who runs plays give the ball to by default (RunPlay.default_carrier()).
+var first_back_is_rb := false
 ## Where the receiver each align names usually lines up (yards across), for drawing them.
 const ALIGN_DRAW_Y := {"left_1": -13.0, "left_2": -6.0, "left_3": -3.0, "right_1": 15.0, "right_2": 6.0, "right_3": 3.0}
 
@@ -60,6 +63,7 @@ static func create(formation_name: String, is_offense: bool, counts: Dictionary)
 			d.spots.append(FormationSpot.make(slot, pos, Vector2.ZERO))
 	if is_offense:
 		d._layout_line()
+		d.first_back_is_rb = true
 	return d
 
 
@@ -199,6 +203,10 @@ func place(slot: String, at: Vector2) -> bool:
 	var p := snap_point(slot, at)
 	if blocker_at(slot, p) != null:
 		return false
+	if first_back_is_rb and s.position == "RB" and slot != "RB" and not is_placed(slot) and not is_placed("RB") and spot("RB") != null:
+		spot("RB").slot = slot # he swaps names with the first back placed
+		s.slot = "RB"
+		slot = "RB"
 	s.offset = p
 	s.align = ""
 	aligned.erase(slot)
