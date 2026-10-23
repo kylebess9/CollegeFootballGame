@@ -62,6 +62,19 @@ func _initialize() -> void:
 	call.set_assignment(CoverageAssignment.blitz("MIKE"))
 	_expect(call.validate().is_empty() and call.assignments.size() == 7, "editing a call keeps one job per defender")
 
+	# A route of the playbook's own, run by a play, then reshaped.
+	var whip := off.add_custom_route("whip", Playbook.route("out"))
+	_expect(off.all_route_names().has("whip") and off.is_custom_route("whip") and not Playbook.ROUTES.has("whip"),
+		"custom routes belong to the playbook, not the stock tree")
+	var wp := pistol.add_play(PassPlay.blank("My Whip", false, pistol)) as PassPlay
+	wp.set_route("WR1", off.make_route("whip"))
+	whip.points.insert(1, Vector2(9, 3))
+	_expect(wp.routes["WR1"].points.size() == 2, "plays keep their own copy until the route is refreshed")
+	off.refresh_route("whip")
+	_expect(wp.routes["WR1"].points == whip.points and wp.routes["WR1"] != whip, "refreshing pushes the new points to plays")
+	off.rename_route("whip", "whip out")
+	_expect(wp.job("WR1") == "whip out" and off.custom_route("whip out") != null, "renaming a route renames it in plays")
+
 	# Save and reload, from scratch.
 	PlaybookStore.save(off)
 	PlaybookStore.save(def)
@@ -69,6 +82,8 @@ func _initialize() -> void:
 	off = null
 	def = null
 	pistol = null
+	whip = null
+	wp = null
 	pa = null
 	run = null
 	base = null
@@ -83,6 +98,9 @@ func _initialize() -> void:
 	var lpa := loaded.offense_play("My PA") as PassPlay
 	_expect(lpa != null and lpa.play_action and lpa.drop == 5.5 and lpa.read_start == 0.9
 		and lpa.job("TE") == "seam" and lpa.reads == ["TE"], "pass play edits survive a reload")
+	var lwp := loaded.offense_play("My Whip") as PassPlay
+	_expect(loaded.custom_route("whip out") != null and loaded.custom_route("whip out").points.size() == 3
+		and lwp.job("WR1") == "whip out" and lwp.routes["WR1"].points.size() == 3, "custom routes survive a reload")
 	_expect((loaded.offense_play("My Run") as RunPlay).run_path == RunPlay.OUTSIDE, "run path survives a reload")
 	var lcall := defs[0].defense_play("My Call")
 	_expect(lcall != null and lcall.assignment("MIKE").type == CoverageAssignment.BLITZ
@@ -241,6 +259,8 @@ func _check_screens(off: Playbook, def: Playbook, a: Team, b: Team) -> void:
 			_expect(ranks.size() == pp.reads.size(), "one read-order drop-down per route runner")
 		await _edit_through_ui(ed)
 		await _build_through_ui(ed)
+		if ed.is_offense():
+			await _routes_through_ui(ed)
 		ed.queue_free()
 		await process_frame
 	stub.queue_free()
@@ -248,6 +268,71 @@ func _check_screens(off: Playbook, def: Playbook, a: Team, b: Team) -> void:
 
 ## Adds a play with the dialog's callback, flips every option on the bottom panel, then
 ## deletes the play, the way a user would.
+## Opens Playbook Routes, makes a route, reshapes it on the field the way a user would, and
+## checks the play options offer it.
+func _routes_through_ui(ed: Node) -> void:
+	var pb: Playbook = ed.playbook
+	var re = ed.route_editor
+	re.open(pb)
+	await process_frame
+	re.select("slant")
+	_expect(not re.canvas.editable, "stock routes can't be edited")
+	var before := pb.custom_routes.size()
+	re.new_route(pb.make_route("slant"))
+	var r: Route = pb.custom_route(re.selected)
+	_expect(pb.custom_routes.size() == before + 1 and re.canvas.editable and r.points.size() == 2,
+		"copying a stock route makes an editable route of the playbook's own")
+	var c: RouteCanvas = re.canvas
+	c.size = Vector2(800, 700)
+	c._layout()
+	# Hover the middle of the line from the receiver to the first point, then click.
+	var a := c.to_screen(r.points[0])
+	var b := c.to_screen(r.points[1])
+	var hover := InputEventMouseMotion.new()
+	hover.position = (a + b) * 0.5
+	c._gui_input(hover)
+	_expect(c._ghost_index == 1, "hovering between points 1 and 2 shows a new point there")
+	var click := InputEventMouseButton.new()
+	click.button_index = MOUSE_BUTTON_LEFT
+	click.pressed = true
+	click.position = hover.position
+	c._gui_input(click)
+	_expect(r.points.size() == 3 and r.points[0] == Vector2(2, 0) and r.points[2] == Vector2(7, -5),
+		"clicking adds the point in between, in order: %s" % [r.points])
+	var drag := InputEventMouseMotion.new()
+	drag.position = c.to_screen(Vector2(6, 4))
+	c._gui_input(drag)
+	click.pressed = false
+	c._gui_input(click)
+	_expect(r.points[1] == Vector2(6, 4), "dragging moves the new point: %s" % [r.points])
+	var right := InputEventMouseButton.new()
+	right.button_index = MOUSE_BUTTON_RIGHT
+	right.pressed = true
+	right.position = c.to_screen(r.points[1])
+	c._gui_input(right)
+	_expect(r.points.size() == 2, "right-clicking a point removes it")
+	re._name_edit.text = "slant"
+	re._on_rename("slant")
+	_expect(re._error.text != "" and pb.custom_route("slant") == null, "a route can't take a stock route's name")
+	re._on_rename("bang")
+	_expect(pb.custom_route("bang") == r, "renaming a route")
+	re.hide()
+	await process_frame
+	var pp: PassPlay = null
+	for p in pb.offense_plays():
+		if p is PassPlay:
+			pp = p
+	ed.select_play(pp)
+	await process_frame
+	var offered := false
+	for o in ed.options.find_children("*", "OptionButton", true, false):
+		for i in o.item_count:
+			offered = offered or o.get_item_text(i) == "bang"
+	_expect(offered, "the play options offer the playbook's own route")
+	re._delete_selected()
+	_expect(pb.custom_route("bang") == null, "deleting a route")
+
+
 func _edit_through_ui(ed: Node) -> void:
 	var pb: Playbook = ed.playbook
 	var formations: Array = pb.offensive_formations if ed.is_offense() else pb.defensive_formations

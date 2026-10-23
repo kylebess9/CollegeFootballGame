@@ -59,6 +59,9 @@ const ZONES := {
 @export var offensive_formations: Array[OffensiveFormation] = []
 @export var defensive_formations: Array[DefensiveFormation] = []
 @export var kicks: Array[KickPlay] = []
+## Routes the user drew for this playbook, on top of the stock ROUTES. Plays keep their
+## own copy of a route; refresh_route() pushes an edit out to them.
+@export var custom_routes: Array[Route] = []
 
 
 ## A fresh copy of a stock route.
@@ -73,6 +76,76 @@ static func route_names() -> Array[String]:
 	var out: Array[String] = []
 	out.assign(ROUTES.keys())
 	return out
+
+
+## Every route this playbook can call: the stock tree, then its own.
+func all_route_names() -> Array[String]:
+	var out := route_names()
+	for r in custom_routes:
+		out.append(r.name)
+	return out
+
+
+func custom_route(route_name: String) -> Route:
+	for r in custom_routes:
+		if r.name == route_name:
+			return r
+	return null
+
+
+func is_custom_route(route_name: String) -> bool:
+	return custom_route(route_name) != null
+
+
+## A fresh copy of any route this playbook knows, stock or its own; null if none.
+func make_route(route_name: String) -> Route:
+	if ROUTES.has(route_name):
+		return route(route_name)
+	var r := custom_route(route_name)
+	return r.duplicate(true) as Route if r != null else null
+
+
+## Adds a route of the playbook's own, starting as a copy of `base` (or a straight
+## 10-yard stem) under a new name.
+func add_custom_route(route_name: String, base: Route = null) -> Route:
+	var r: Route
+	if base != null:
+		r = base.duplicate(true)
+		r.name = route_name
+	else:
+		var pts: Array[Vector2] = [Vector2(10, 0)]
+		r = Route.make(route_name, pts, Route.STOP)
+	custom_routes.append(r)
+	return r
+
+
+## Renames one of the playbook's routes, in every play that runs it too.
+func rename_route(old_name: String, new_name: String) -> void:
+	var r := custom_route(old_name)
+	if r == null:
+		return
+	r.name = new_name
+	for p in offense_plays():
+		if p is PassPlay:
+			for slot in p.routes:
+				if p.routes[slot].name == old_name:
+					p.routes[slot].name = new_name
+
+
+## Gives every play running this route a fresh copy of it, after its points changed.
+func refresh_route(route_name: String) -> void:
+	for p in offense_plays():
+		if p is PassPlay:
+			for slot in p.routes.keys():
+				if p.routes[slot].name == route_name:
+					p.routes[slot] = make_route(route_name)
+
+
+## Removes one of the playbook's routes. Plays already running it keep their copy.
+func remove_custom_route(route_name: String) -> void:
+	var r := custom_route(route_name)
+	if r != null:
+		custom_routes.erase(r)
 
 
 ## A fresh copy of a stock zone.
