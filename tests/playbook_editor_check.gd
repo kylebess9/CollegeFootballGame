@@ -44,6 +44,14 @@ func _initialize() -> void:
 	pa.set_block("WR3")
 	_expect(pa.job("RB") == "swing" and "RB" in pa.reads and not "RB" in pa.protect, "RB sent on a swing")
 	_expect(pa.job("WR3") == PassPlay.BLOCK and not "WR3" in pa.reads and "WR3" in pa.protect, "WR3 kept in")
+	pa.set_route("WR3", Playbook.route("dig"))
+	var before_reads := pa.reads.duplicate()
+	pa.set_read_priority("WR3", 1)
+	_expect(pa.reads[0] == "WR3" and pa.reads.slice(1) == before_reads.filter(func(r: String) -> bool: return r != "WR3"),
+		"moving WR3 to first read keeps everyone else's order")
+	pa.set_read_priority("WR3", 99)
+	_expect(pa.reads[-1] == "WR3", "a priority past the end puts him last")
+	pa.set_block("WR3")
 	for slot in ["WR1", "WR2", "TE", "RB"]:
 		pa.set_block(slot)
 	_expect(not pa.validate().is_empty(), "a pass play with nobody running a route is caught")
@@ -217,12 +225,20 @@ func _check_screens(off: Playbook, def: Playbook, a: Team, b: Team) -> void:
 		if not with_players.is_empty():
 			ed.select_play(with_players[-1])
 			await process_frame
-			var opt: Control = ed.options.find_children("*", "OptionButton", true, false)[-1]
+			var opt: Control = ed.options.find_children("*", "OptionButton", true, false)[0]
 			opt.mouse_entered.emit()
 			_expect(ed.field.highlighted != null and ed.field.highlighted.slot == opt.get_parent().get_child(0).text.split(" ")[0],
 				"%s: hovering a player's drop-down highlights him on the field" % pb.name)
 			opt.mouse_exited.emit()
 			_expect(ed.field.highlighted == null, "%s: and leaving it clears the highlight" % pb.name)
+		if ed.is_offense():
+			var pp: PassPlay = with_players[-1]
+			var labels := ed.options.find_children("*", "Label", true, false).map(func(l: Label) -> String: return l.text)
+			_expect(not labels.any(func(t: String) -> bool: return t.begins_with("LT ") or t.begins_with("C ")),
+				"linemen aren't listed for a pass play")
+			var ranks := ed.options.find_children("*", "OptionButton", true, false).filter(
+				func(o: OptionButton) -> bool: return o.item_count > 0 and o.get_item_text(0) == "1")
+			_expect(ranks.size() == pp.reads.size(), "one read-order drop-down per route runner")
 		await _edit_through_ui(ed)
 		await _build_through_ui(ed)
 		ed.queue_free()
