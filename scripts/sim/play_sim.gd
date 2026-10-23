@@ -101,7 +101,7 @@ func setup(offense: Team, defense: Team, off_call: OffensivePlay, def_call: Defe
 	_build_offense(off_play)
 	_build_defense(def_play)
 	_assign_blocks()
-	qb = slots["O:QB"]
+	qb = slots["O:" + off_play.formation.snap_slot]
 	holder = qb
 	ball_pos = qb.pos
 	if not is_run:
@@ -152,7 +152,7 @@ func _build_offense(play: OffensivePlay) -> void:
 		var p := _player_for(off_team, dc, spot, used)
 		used[p] = true
 		var a := _add(off_team, O, spot.slot, p, Vector2(los + spot.offset.x, _clamp_y(c + spot.offset.y)))
-		a.job = "qb" if spot.slot == "QB" else "block"
+		a.job = "qb" if spot.slot == play.formation.snap_slot else "block"
 
 	if is_run:
 		var rb: SimActor = slots["O:RB"]

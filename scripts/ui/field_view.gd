@@ -18,6 +18,9 @@ var popups: Array[Dictionary] = [] # {text, pos (field), color, born}
 var clock := 0.0
 var font: Font
 var hovered: SimActor = null
+## A player to point out (e.g. the one whose options are being edited): drawn with a
+## pulsing ring.
+var highlighted: SimActor = null
 
 ## Emitted whenever the player under the mouse changes (null when none).
 signal hover_changed(actor: SimActor)
@@ -31,6 +34,8 @@ const LETTER := {
 	"QB": "Q", "RB": "R", "WR1": "W", "WR2": "W", "WR3": "W", "TE": "T",
 	"WILL": "L", "MIKE": "M", "SAM": "L", "CB1": "C", "CB2": "C", "SS": "S", "FS": "S",
 }
+## Slots a formation builder made up (WR4, LB2...) are lettered by position instead.
+const POSITION_LETTER := {"QB": "Q", "RB": "R", "WR": "W", "TE": "T", "LB": "L", "CB": "C", "S": "S"}
 
 
 func _ready() -> void:
@@ -334,14 +339,22 @@ func _draw_players() -> void:
 			draw_arc(p, r + 2.5, 0, TAU, 24, Color.WHITE, 2.5)
 		if a == hovered:
 			draw_arc(p, r + 3.5, 0, TAU, 24, Color("#f2b134"), 2.5)
+		if a == highlighted:
+			var pulse := 0.5 + 0.5 * sin(clock * 6.0)
+			draw_circle(p, r * (1.9 + 0.3 * pulse), Color(1.0, 0.85, 0.2, 0.18 + 0.12 * pulse))
+			draw_arc(p, r * (1.9 + 0.3 * pulse), 0, TAU, 32, Color("#f2b134"), 3.0)
 		if not a.is_up():
 			var d := r * 0.6
 			draw_line(p - Vector2(d, d), p + Vector2(d, d), Color(0, 0, 0, 0.8), 2.0)
 			draw_line(p - Vector2(d, -d), p + Vector2(d, -d), Color(0, 0, 0, 0.8), 2.0)
-		elif LETTER.has(a.slot):
-			var t: String = LETTER[a.slot]
+		elif _letter(a) != "":
+			var t := _letter(a)
 			var w := font.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, lfs).x
 			draw_string(font, p + Vector2(-w * 0.5, lfs * 0.38), t, HORIZONTAL_ALIGNMENT_LEFT, -1, lfs, Color(1, 1, 1, 0.95))
+
+
+func _letter(a: SimActor) -> String:
+	return LETTER.get(a.slot, POSITION_LETTER.get(a.player.position, ""))
 
 
 func _draw_ball() -> void:

@@ -51,6 +51,10 @@ godot --headless --script res://tests/balance_test.gd
   a specific mechanic's behavior in context.
 - `tests/playbook_check.gd` — checks the stock playbook is legal and that illegal formations and
   plays are rejected. Run it after adding or changing plays.
+- `tests/playbook_editor_check.gd` — user playbooks (Manage Playbooks): new ones start legal,
+  edits save and reload, and the editor screens build and can be clicked through. Run it after
+  touching the playbook classes, `playbook_store.gd` or the editor UI. It saves to
+  `user://test_playbooks`, never the user's own playbooks.
 - `tests/redzone_check.gd` — regression test: scans every play for scoring/boundary bugs
   (a play ending in the end zone without being scored as a TD, a catch/interception recorded
   out of bounds). Extend this file's checks when you fix a new class of edge-case bug, so it
@@ -68,14 +72,19 @@ the pattern).
 
 - `scripts/data/` — `football_player.gd` (attributes, skills, overall rating),
   `team.gd`, `team_generator.gd` (random roster generation — there's no recruiting/drafting
-  system yet, this is a placeholder).
+  system yet, this is a placeholder), `playbook_store.gd` (saves the user's playbooks).
 - `scripts/sim/` — `dice.gd`, `playbook.gd` (a team's playbook; the stock one is built in
   `Playbook.make_default()` — plays are data, not code, add new plays there), `plays/` (the
   formation/play/route/zone classes a playbook is made of; formations validate their own legality),
   `sim_actor.gd`, `play_sim.gd` (**the core simulation; largest and most sensitive file** —
   movement, QB decision logic, blocking, catching, tackling, boundaries, scoring),
   `game_state.gd` (score/clock/downs/possession), `coach_ai.gd` (CPU play-calling).
-- `scripts/ui/` — menu, roster screen, match screen, field drawing (`field_view.gd`).
+- `scripts/ui/` — menu, roster screen, match screen, field drawing (`field_view.gd`),
+  `playbooks_screen.gd` (Manage Playbooks) and `playbook_editor.gd`, whose parts (formation list,
+  play options panel, dialogs, drawn icon buttons, and the formation builder: `formation_draft.gd`
+for its rules, `formation_board.gd` / `player_tray.gd` / `formation_panel.gd` for its UI) are in
+`scripts/ui/playbook/`. Custom
+  playbooks aren't used in games yet; `GameState` still gives both teams the stock one.
 - `tests/` — see Testing above.
 
 ## Design constraints to respect

@@ -19,13 +19,16 @@ Players move automatically based on the play call. Dice settle the key moments:
 Ratings are 1-6. Skills (Soft Hands, Pass Rusher, Ball Hawk...) give re-rolls or +1s.
 
 ## Code layout
-- `scripts/data/` players, teams, random team generator
+- `scripts/data/` players, teams, random team generator, saved playbooks (`playbook_store.gd`)
 - `scripts/sim/` dice, playbook (all plays are data), play simulation, game rules, CPU coach
-- `scripts/ui/` menu, roster screen, match screen, field drawing
+- `scripts/ui/` menu, roster screen, match screen, field drawing, Manage Playbooks screen and
+  playbook editor (`playbook_editor.gd`, with its pieces in `scripts/ui/playbook/`)
 - `tests/balance_test.gd` runs thousands of plays and prints averages per matchup:
   `godot --headless --script res://tests/balance_test.gd`
 - `tests/game_log.gd` prints a whole CPU vs CPU game
 - `tests/playbook_check.gd` checks the stock playbook is legal and that illegal formations are caught
+- `tests/playbook_editor_check.gd` checks user playbooks start legal, save and reload, and that the
+  editor screens build
 
 ## Adding a play
 Plays live in a `Playbook` (`scripts/sim/playbook.gd`); each team gets one through `GameState`.
@@ -41,3 +44,18 @@ The building blocks are in `scripts/sim/plays/`:
 
 To add a stock play, add it to its formation in `Playbook.make_default()`, then run
 `tests/playbook_check.gd` to make sure it's legal.
+
+## Custom playbooks
+Main menu → Manage Playbooks. Offensive and defensive playbooks are separate `Playbook`s
+(`kind` = offense / defense), saved as `.tres` files under `user://playbooks/` by `PlaybookStore`.
+A new one starts with every stock formation package (`Playbook.offense_packages()` /
+`defense_packages()`), so a new stock formation added there shows up in new playbooks. The
+editor's route drop-down lists `Playbook.ROUTES`, its run paths `RunPlay.PATHS`, and its
+coverage choices `Playbook.ZONES` plus man and blitz. Who takes the snap is the formation's
+`snap_slot`, which must be the player closest behind the center.
+
+New formations are made in the editor's formation builder (Add Formation under the
+formations list, or a formation's pencil): pick how many players at each position, then drag
+them onto the field. `FormationDraft` (`scripts/ui/playbook/formation_draft.gd`) holds the
+builder's rules (line layout, snapping, no overlaps, who gets the snap); the legality checks
+themselves stay in `OffensiveFormation` / `DefensiveFormation`.

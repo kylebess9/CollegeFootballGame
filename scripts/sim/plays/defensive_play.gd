@@ -28,6 +28,25 @@ static func make(play_name: String, desc: String, assigns: Array[CoverageAssignm
 	return p
 
 
+## A new call with everyone off the line in man coverage, so it's legal from the start.
+static func blank(play_name: String, f: DefensiveFormation) -> DefensivePlay:
+	var p := DefensivePlay.new()
+	p.name = play_name
+	for s in f.spots:
+		if s.position != "DL":
+			p.assignments.append(CoverageAssignment.man(s.slot))
+	return p
+
+
+## Replaces whatever job this assignment's player had.
+func set_assignment(a: CoverageAssignment) -> void:
+	var old := assignment(a.slot)
+	if old != null:
+		assignments[assignments.find(old)] = a
+	else:
+		assignments.append(a)
+
+
 func assignment(slot: String) -> CoverageAssignment:
 	for a in assignments:
 		if a.slot == slot:

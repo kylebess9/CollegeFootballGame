@@ -71,6 +71,12 @@ func _ready() -> void:
 	practice.pressed.connect(main.show_practice)
 	col.add_child(practice)
 
+	var playbooks := UiStyle.button("MANAGE PLAYBOOKS")
+	playbooks.tooltip_text = "Build your own offensive and defensive playbooks: add plays, pick routes and coverages."
+	playbooks.custom_minimum_size = Vector2(0, 44)
+	playbooks.pressed.connect(main.show_playbooks)
+	col.add_child(playbooks)
+
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
 	var b1 := UiStyle.button("My Roster")
