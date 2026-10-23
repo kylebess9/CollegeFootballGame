@@ -23,7 +23,11 @@ const ZONE_RANGE := 1.6        # a defender this close to a receiver or runner "
 const BLOCK_RANGE := 1.3
 const BLOCK_INTERVAL := 1.0
 const ASSIST_RANGE := 2.0
-const BALL_SPEED := 21.0
+const BALL_SPEED := 21.0      # a pitch's speed, and a pass from a Strength 2 QB
+const ARM_SPEED_BASE := 17.0  # a pass leaves the QB's hand at this + ARM_SPEED_PER_STR * Strength...
+const ARM_SPEED_PER_STR := 2.0
+const DUCK_SPEED := 0.5       # ...a wobbly duck at this fraction of it...
+const HURRY_SPEED_LOSS := 0.4 # ...and a pressured throw loses up to this fraction, less with a stronger arm
 const CATCH_REACH := 1.6
 const HANDOFF_TIME := 0.55    # when a play-action fake happens, and when the defense reads a run
 const HANDOFF_RADIUS := 4.0   # on a run the RB must get this close to the QB for a handoff...
@@ -69,6 +73,7 @@ var ball_from := Vector2.ZERO
 var ball_to := Vector2.ZERO
 var ball_flight := 0.0
 var ball_flight_time := 0.0
+var ball_speed := BALL_SPEED # yards/second of the ball in the air
 var ball_target: SimActor = null
 var ball_quality := "good" # good / bad / duck / away
 var thrown_at := -1.0
@@ -509,7 +514,7 @@ func _handle_snap_events() -> void:
 			pitched = true
 			ball_quality = "pitch"
 			_log("%s pitches it to %s" % [qb.tag(), rb.tag()], qb.pos, -1, "", "Pitch")
-			_launch(_catch_point(rb), rb)
+			_launch(_catch_point(rb, BALL_SPEED), rb, BALL_SPEED)
 			_defense_sees_run()
 	if play_action and not handed_off and t >= HANDOFF_TIME:
 		handed_off = true
@@ -620,8 +625,13 @@ func _start_read(i: int) -> void:
 		read_noise = dice.rng.randf_range(-1.2, 1.6)
 
 
-func _flight_time(from: Vector2, to: Vector2) -> float:
-	return from.distance_to(to) / BALL_SPEED + 0.1
+func _flight_time(from: Vector2, to: Vector2, speed: float = BALL_SPEED) -> float:
+	return from.distance_to(to) / speed + 0.1
+
+
+## How fast this QB throws a clean pass. He leads receivers expecting this speed.
+func _arm_speed() -> float:
+	return ARM_SPEED_BASE + ARM_SPEED_PER_STR * qb.r("str")
 
 
 ## Where a receiver will be after `time` seconds if he keeps running his route.
@@ -647,16 +657,18 @@ func _predict(a: SimActor, time: float) -> Vector2:
 	return p
 
 
-func _catch_point(rec: SimActor) -> Vector2:
-	var land := _predict(rec, _flight_time(qb.pos, rec.pos))
-	land = _predict(rec, _flight_time(qb.pos, land))
+func _catch_point(rec: SimActor, speed: float = -1.0) -> Vector2:
+	if speed <= 0.0:
+		speed = _arm_speed()
+	var land := _predict(rec, _flight_time(qb.pos, rec.pos, speed))
+	land = _predict(rec, _flight_time(qb.pos, land, speed))
 	return land
 
 
 ## Yards of cushion the receiver will have when the ball arrives. Negative means covered.
 func _openness(rec: SimActor) -> float:
 	var land := _catch_point(rec)
-	var tf := _flight_time(qb.pos, land)
+	var tf := _flight_time(qb.pos, land, _arm_speed())
 	var best := 99.0
 	for d in defenders():
 		if not d.is_up():
@@ -735,7 +747,15 @@ func _release(rec: SimActor, hurried: bool) -> void:
 		mod -= 1
 	var res := _test(qb, 7 - qb.r("pas") + mod, "Accuracy (%s, %d yds%s)" % [range_name, int(dist), ", pressured" if hurried else ""])
 	var target := land
+	# The QB led the receiver for a clean throw at his arm speed. A pressured throw comes out
+	# slower than he planned (the receiver may have to wait for it and defenders close in),
+	# and a duck floats at half speed.
+	var speed := _arm_speed()
+	if hurried:
+		var max_loss := HURRY_SPEED_LOSS * (7 - qb.r("str")) / 6.0
+		speed *= 1.0 - dice.rng.randf_range(0.0, max_loss)
 	if int(res["first"]) == 1 and not res["ok"]:
+		speed *= DUCK_SPEED
 		ball_quality = "duck"
 		target += dice.scatter(dice.rng.randf_range(2.5, 4.0) + dist * 0.06)
 		_log("%s throws a wobbly duck toward %s" % [qb.tag(), rec.tag()], qb.pos, 0, res["detail"], "Duck!")
@@ -747,7 +767,7 @@ func _release(rec: SimActor, hurried: bool) -> void:
 		ball_quality = "good"
 		_log("%s throws to %s" % [qb.tag(), rec.tag()], qb.pos, 1, res["detail"], "On target")
 	target.y = clampf(target.y, -1.0, FIELD_W + 1.0)
-	_launch(target, rec)
+	_launch(target, rec, speed)
 
 
 func _throw_away(detail: String) -> void:
@@ -761,10 +781,10 @@ func _release_away() -> void:
 	var y := -2.0 if qb.pos.y < FIELD_W * 0.5 else FIELD_W + 2.0
 	ball_quality = "away"
 	_log("%s throws it away" % qb.tag(), qb.pos, -1, "", "Thrown away")
-	_launch(Vector2(qb.pos.x + 6.0, y), null)
+	_launch(Vector2(qb.pos.x + 6.0, y), null, _arm_speed())
 
 
-func _launch(to: Vector2, rec: SimActor) -> void:
+func _launch(to: Vector2, rec: SimActor, speed: float) -> void:
 	qb_state = "thrown"
 	qb.job = "idle"
 	holder = null
@@ -773,7 +793,8 @@ func _launch(to: Vector2, rec: SimActor) -> void:
 	ball_to = to
 	ball_target = rec
 	ball_flight = 0.0
-	ball_flight_time = _flight_time(ball_from, ball_to)
+	ball_speed = speed
+	ball_flight_time = _flight_time(ball_from, ball_to, speed)
 	thrown_at = t
 
 

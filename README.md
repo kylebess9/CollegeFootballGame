@@ -10,12 +10,13 @@ Players move automatically based on the play call. Dice settle the key moments:
 |---|---|
 | Block | Block dice. Equal Strength = 1 die; small edge = 2 dice; big edge = 3. Stronger side picks: Shed / Stalemate / Push / Drive / Pancake |
 | Throw | d6 needs (7 - Passing)+. Quick throws easier, deep throws harder, +1 if hurried. Misses scatter the ball |
+| Pass speed | A pass travels at 17 + 2 x the QB's Strength yds/s, and he leads the receiver for that. A hurried throw loses up to 40% of it (less with more Strength), so the receiver may have to wait for it; a wobbly duck goes at half speed. Pitches always go at 21 |
 | Catch | d6 needs (7 - Hands)+, +1 per defender within 1.6 yds, +1 if off target. A clean catch gives a short speed burst |
 | Bobble | An open receiver (no defender within 1.6 yds, no tip) who misses gets one more try, 1 easier; if he holds on, (7 - Agility)+ to stay up (he pauses a moment), else he's down with the catch |
 | Interception | Only a defender closer to the ball than the receiver. d6 needs (10 - Hands)+; 3 easier with a free re-roll if no offensive player is within 1.6 yds of the ball |
 | Tackle | d6 needs 2+, +1 per 2 points runner Agility beats Tackling, -1 per helper, +1 diving |
 | Play action | Each linebacker/SS rolls Awareness or bites on the fake |
-| Handoff / pitch | The RB must reach the QB (2.5 yds) within the run play's `time_delay`; if not, the QB pitches it. A pitch is caught on 2+ with a free re-roll |
+| Handoff / pitch | The RB must reach the QB (4 yds) within the run play's `time_delay`; if not, the QB pitches it. A pitch is caught on 2+ with a free re-roll |
 | Fumble | A natural 6 tackle forces a roll to hold on. A dropped pass or pitch thrown behind the QB is a fumble: the ball scatters and the nearest player tries to scoop it up, (7 - Agility)+, +1 per opponent marking him |
 
 Ratings are 1-6. Skills (Soft Hands, Pass Rusher, Ball Hawk...) give re-rolls or +1s.

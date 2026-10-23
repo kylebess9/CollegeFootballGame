@@ -19,7 +19,7 @@ const ATTR_NAMES := {
 
 const ATTR_HELP := {
 	"spd": "How fast the player runs. Decides who wins footraces and how much separation receivers get.",
-	"str": "Blocking power. Compared on both sides of a block to decide how many block dice are rolled and who picks.",
+	"str": "Blocking power. Compared on both sides of a block to decide how many block dice are rolled and who picks. For a QB, how fast his passes travel.",
 	"agi": "Elusiveness and route cuts. Ball carriers with high agility make tackles harder.",
 	"hnd": "Catching, interceptions and holding on to the ball.",
 	"pas": "Throw accuracy. Accuracy roll needs (7 - Passing)+, harder for longer throws and under pressure.",

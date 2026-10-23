@@ -74,6 +74,9 @@ godot --headless --script res://tests/balance_test.gd
   try (then stays up and pauses, or goes down with the catch), a clean catch gives a speed burst,
   and a ball no offensive player can reach is far easier to intercept. Run it after touching the
   catch or interception code in `play_sim.gd`.
+- `tests/pass_speed_check.gd` — pass speed: a clean pass goes at the QB's arm speed (from Strength),
+  a pressured one slower by a varying amount, a wobbly duck at half speed, and a pitch always at
+  `BALL_SPEED`. Run it after touching the throw or `_launch` code in `play_sim.gd`.
 - `tests/redzone_check.gd` — regression test: scans every play for scoring/boundary bugs
   (a play ending in the end zone without being scored as a TD, a catch/interception recorded
   out of bounds). Extend this file's checks when you fix a new class of edge-case bug, so it
