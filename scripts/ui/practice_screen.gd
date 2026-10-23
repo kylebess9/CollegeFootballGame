@@ -28,6 +28,7 @@ var call_buttons: HFlowContainer
 var caller: PlayCaller
 var spot_spin: SpinBox
 var speed_option: OptionButton
+var redo_button: Button
 
 var sim: PlaySim
 var sim_was_run := false
@@ -39,6 +40,8 @@ var events_shown := 0
 var paused := false
 var pending_off := ""
 var pending_def := ""
+var last_off := "" # the calls of the last rep that ran, for the redo button
+var last_def := ""
 
 
 func _exit_tree() -> void:
@@ -106,6 +109,10 @@ func _build_ui() -> void:
 	edit_panel.saved.connect(_on_edit_saved)
 	edit_panel.cancelled.connect(_on_edit_closed)
 	side.add_child(edit_panel)
+	redo_button = UiStyle.button("Redo Play", "Run the same offensive and defensive calls again")
+	redo_button.disabled = true
+	redo_button.pressed.connect(_redo_play)
+	side.add_child(redo_button)
 
 	root.add_child(_build_call_panel())
 
@@ -344,6 +351,9 @@ func _start_play() -> void:
 		_on_edit_closed() # don't let a play start with the debug editor still up
 	if sim != null:
 		sim.dispose()
+	last_off = pending_off
+	last_def = pending_def
+	redo_button.disabled = true
 	_log_line("\n[color=#f2b134]%s[/color]\n[b]%s[/b] vs [b]%s[/b]" % [gs.field_position_text(), pending_off, pending_def])
 	call_title.text = "%s vs %s" % [pending_off, pending_def]
 	call_hint.text = "Watching the play..."
@@ -417,3 +427,16 @@ func _finish_play() -> void:
 	_log_line("   [b]%s[/b]" % verb.get(kind, "Gain of %d" % yards))
 	state = "post"
 	post_timer = POST_PLAY_PAUSE
+	redo_button.disabled = false
+
+
+## Runs the last rep's calls again from the chosen spot, skipping both play calls. Works
+## during the post-play pause too, or once the call panel is back up.
+func _redo_play() -> void:
+	if state == "playing" or last_off == "":
+		return
+	_reset_spot()
+	caller.clear()
+	pending_off = last_off
+	pending_def = last_def
+	_start_play()
