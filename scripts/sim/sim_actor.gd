@@ -26,6 +26,8 @@ var block_cooldown := 0.0   # can't engage in a block
 var tackle_cooldown := 0.0  # can't try another tackle
 var slow_time := 0.0        # stumbling after a broken tackle
 var cut_time := 0.0         # slowing for a route cut
+var stall_time := 0.0       # gathering a bobbled catch, standing still
+var burst_time := 0.0       # sprinting away after a clean catch
 
 # Blocking
 var engaged: SimActor = null
