@@ -263,6 +263,7 @@ func _check_screens(off: Playbook, def: Playbook, a: Team, b: Team) -> void:
 		if ed.is_offense():
 			await _routes_through_ui(ed)
 			await _play_route_through_ui(ed)
+			await _run_path_through_ui(ed)
 		ed.queue_free()
 		await process_frame
 	stub.queue_free()
@@ -340,6 +341,125 @@ func _routes_through_ui(ed: Node) -> void:
 ## Clicks a receiver on the editor's field and reshapes his route there: it becomes the
 ## play's own "Custom" route (the playbook's routes untouched), survives a reload, and picking
 ## a route from his drop-down swaps it back out.
+## A run play's ball carrier: the first back dragged into a new formation gets the ball by
+## default; any QB, RB, TE or WR can be given it instead; clicking him on the field reshapes
+## his path (the run path drop-down then says Custom), Inside / Outside put the stock path
+## back, and the sim runs the drawn path.
+func _run_path_through_ui(ed: Node) -> void:
+	var d := FormationDraft.create("Split Backs", true, {"QB": 1, "RB": 2, "WR": 2, "TE": 1, "OL": 5})
+	d.place("QB", Vector2(-4.0, 0.0))
+	d.place("RB2", Vector2(-6.0, 3.0))
+	_expect(d.spot("RB") != null and d.spot("RB").offset == Vector2(-6.0, 3.0) and not d.is_placed("RB2"),
+		"the first back dragged in becomes RB, the default ball carrier")
+	d.place("RB2", Vector2(-6.0, -3.0))
+	var twins: OffensiveFormation = d.to_formation()
+	_expect(RunPlay.default_carrier(twins) == "RB", "the default carrier is RB")
+
+	var pb: Playbook = ed.playbook
+	var rp: RunPlay = null
+	for p in pb.offense_plays():
+		if p is RunPlay and p.run_path == RunPlay.OUTSIDE:
+			rp = p
+	ed.select_play(rp)
+	await process_frame
+	ed.field.size = Vector2(1200, 540)
+	ed.field._layout()
+	var ov: PlayRouteOverlay = ed.route_overlay
+	var rb: SimActor = ed.sim.slots["O:RB"]
+	var click := InputEventMouseButton.new()
+	click.button_index = MOUSE_BUTTON_LEFT
+	click.pressed = true
+	click.position = ed.field.to_screen(ed.sim.slots["O:LT"].pos)
+	ov._gui_input(click)
+	_expect(ov.slot == "", "clicking a blocker on a run picks nobody")
+	click.position = ed.field.to_screen(rb.pos)
+	ov._gui_input(click)
+	click.pressed = false
+	ov._gui_input(click)
+	_expect(ov.slot == "RB" and ov.editable and ov.route.points.size() == rb.path.size(),
+		"clicking the ball carrier shows his path's points")
+	var hover := InputEventMouseMotion.new()
+	hover.position = (ov.to_screen(Vector2.ZERO) + ov.to_screen(ov.route.points[0])) * 0.5
+	ov._gui_input(hover)
+	_expect(ov._ghost_index == 0, "hovering his path shows a new point")
+	click.pressed = true
+	click.position = hover.position
+	ov._gui_input(click)
+	var drag := InputEventMouseMotion.new()
+	for to in [Vector2(-1, 6), Vector2(1, 9)]:
+		drag.position = ov.to_screen(to)
+		ov._gui_input(drag)
+	click.pressed = false
+	ov._gui_input(click)
+	await process_frame
+	_expect(rp.has_custom_path() and rp.path.size() == 3 and rp.path[0] == Vector2(1, 9),
+		"adding and dragging a point gives the play its own path: %s" % [rp.path])
+	var runner_path: Array[Vector2] = ed.sim.runner.path
+	_expect(runner_path.size() == 3 and runner_path[0].is_equal_approx(ed.sim.runner.start_pos + Vector2(1, 9)),
+		"the sim runs the drawn path")
+	var path_opt: OptionButton = null
+	for o in ed.options.find_children("*", "OptionButton", true, false):
+		if o.item_count > 0 and o.get_item_text(0) == "Inside":
+			path_opt = o
+	_expect(path_opt != null and path_opt.get_item_text(path_opt.selected) == PlayOptions.CUSTOM_LABEL, "the run path shows Custom")
+	var reloaded: Playbook = null
+	for saved in PlaybookStore.list(Playbook.OFFENSE):
+		if saved.name == pb.name:
+			reloaded = saved
+	var saved_play: RunPlay = reloaded.offense_play(rp.name) if reloaded != null else null
+	_expect(saved_play != null and saved_play.path == rp.path, "the drawn path is saved with the play")
+	path_opt.select(0)
+	path_opt.item_selected.emit(0)
+	await process_frame
+	_expect(not rp.has_custom_path() and rp.run_path == RunPlay.INSIDE, "picking Inside puts the stock path back")
+
+	# Give it to someone else: the QB keeps it.
+	var who: OptionButton = null
+	for o in ed.options.find_children("*", "OptionButton", true, false):
+		if _carrier_list(o):
+			who = o
+	_expect(who != null and who.get_item_text(who.selected).begins_with("RB"), "the ball carrier list starts on the RB")
+	var qb := -1
+	for i in who.item_count:
+		if who.get_item_text(i).begins_with("QB"):
+			qb = i
+	who.select(qb)
+	who.item_selected.emit(qb)
+	await process_frame
+	_expect(rp.ball_carrier() == "QB" and ed.sim.runner == ed.sim.qb and rp.validate().is_empty(), "the QB can be given the ball")
+	who = null
+	for o in ed.options.find_children("*", "OptionButton", true, false):
+		if _carrier_list(o):
+			who = o
+	var wr := -1
+	for i in who.item_count:
+		if who.get_item_text(i).begins_with("WR1"):
+			wr = i
+	who.select(wr)
+	who.item_selected.emit(wr)
+	await process_frame
+	_expect(ed.sim.runner.slot == "WR1", "or a receiver")
+	click.pressed = true
+	click.position = ed.field.to_screen(ed.sim.runner.pos)
+	ov._gui_input(click)
+	_expect(ov.slot == "WR1", "and then he's the one clicked to edit the path")
+	ed.run_play()
+	var ticks := 0
+	while ed.running and ticks < 2000:
+		ed._process(0.05)
+		ticks += 1
+	_expect(not ed.running, "a run to a receiver plays out")
+	rp.carrier = ""
+	ed.select_play(null)
+
+
+func _carrier_list(o: OptionButton) -> bool:
+	for i in o.item_count:
+		if o.get_item_text(i) == "QB  (QB)":
+			return true
+	return false
+
+
 func _play_route_through_ui(ed: Node) -> void:
 	var pb: Playbook = ed.playbook
 	var pp: PassPlay = null

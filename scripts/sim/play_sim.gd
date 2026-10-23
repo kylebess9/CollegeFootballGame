@@ -85,6 +85,8 @@ var pressure_decided := false
 var handed_off := false
 var run_side := 1
 var run_side_fixed := false # true when the RB lines up off to one side, so he always goes that way
+## On a run, who gets the ball (RunPlay.ball_carrier()); null on a pass.
+var runner: SimActor = null
 var windup := 0.0
 var pending_rec: SimActor = null
 var pending_hurried := false
@@ -167,21 +169,36 @@ func _build_offense(play: OffensivePlay) -> void:
 
 	# A back lined up in the snap lane behind the ball can go either way (the coin flip in setup);
 	# one offset to a side always goes to the side he's on: runs, swing routes and PA fakes.
-	if slots.has("O:RB"):
-		var off_y: float = slots["O:RB"].start_pos.y - c
+	if is_run:
+		# Nobody valid to give it to (the editor can line up a broken play): the QB keeps it.
+		runner = slots.get("O:" + (play as RunPlay).ball_carrier(), slots["O:" + play.formation.snap_slot])
+	var back: SimActor = runner if is_run else slots.get("O:RB")
+	if back != null:
+		var off_y: float = back.start_pos.y - c
 		if absf(off_y) > OffensiveFormation.SNAP_LANE:
 			run_side = 1 if off_y > 0.0 else -1
 			run_side_fixed = true
 
 	if is_run:
-		var rb: SimActor = slots["O:RB"]
-		rb.job = "rb_run"
+		var rp := play as RunPlay
 		var s := float(run_side)
-		if (play as RunPlay).run_path == RunPlay.INSIDE:
-			rb.path = [Vector2(los - 1.5, c + s * 2.0), Vector2(los + 2.0, c + s * 2.5)]
+		if rp.has_custom_path():
+			runner.path.clear()
+			for p in rp.path:
+				var pt := runner.start_pos + p
+				runner.path.append(Vector2(minf(pt.x, END_LINE_STOP), clampf(pt.y, 1.5, FIELD_W - 1.5)))
+			run_side_fixed = true # drawn as it goes, never mirrored
+		elif rp.run_path == RunPlay.INSIDE:
+			runner.path = [Vector2(los - 1.5, c + s * 2.0), Vector2(los + 2.0, c + s * 2.5)]
 		else:
-			rb.path = [Vector2(los - 3.5, c + s * 7.0), Vector2(los + 0.5, c + s * 11.0)]
-		rb.path_end = "free"
+			runner.path = [Vector2(los - 3.5, c + s * 7.0), Vector2(los + 0.5, c + s * 11.0)]
+		runner.path_end = "free"
+		if runner.slot == play.formation.snap_slot:
+			# A QB keeper: he runs it himself from the snap.
+			runner.job = "carry"
+			qb_state = "handed_off"
+		else:
+			runner.job = "rb_run"
 	else:
 		var routes := (play as PassPlay).routes
 		for slot in routes:
@@ -464,8 +481,13 @@ func step() -> void:
 
 
 func _handle_snap_events() -> void:
-	if is_run and not handed_off and holder == qb:
-		var rb: SimActor = slots["O:RB"]
+	if is_run and not handed_off and holder == qb and runner == qb:
+		if t >= HANDOFF_MIN_TIME:
+			handed_off = true
+			_log("%s keeps it" % qb.tag(), qb.pos, -1, "", "")
+			_defense_sees_run()
+	elif is_run and not handed_off and holder == qb:
+		var rb := runner
 		if t >= HANDOFF_MIN_TIME and rb.is_up() and rb.pos.distance_to(qb.pos) <= HANDOFF_RADIUS:
 			handed_off = true
 			holder = rb

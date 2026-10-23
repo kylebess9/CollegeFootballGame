@@ -59,7 +59,11 @@ editor's route drop-down lists `Playbook.ROUTES` plus the playbook's own `custom
 the editor's Playbook Routes window; plays keep a copy and `refresh_route()` updates them). Clicking
 a route runner on the editor's field reshapes his route for that play alone (`PlayRouteOverlay`):
 `PassPlay.customize()` makes it a copy named `Route.CUSTOM`, kept only in the play and shown as
-"Custom" in the drop-down, until another route is picked there. Its run paths `RunPlay.PATHS`, and its
+"Custom" in the drop-down, until another route is picked there. Its run paths are `RunPlay.PATHS`;
+clicking a run play's ball carrier on the field draws him his own path the same way (`RunPlay.path`,
+"Custom" until Inside or Outside is picked again). The ball carrier is `RunPlay.carrier`, any QB,
+RB, TE or WR (the QB taking the snap keeps it); by default the formation's RB, which in a new
+formation is the first back dragged onto the field. Its
 coverage choices `Playbook.ZONES` plus man and blitz. Who takes the snap is the formation's
 `snap_slot`, which must be the player closest behind the center.
 
