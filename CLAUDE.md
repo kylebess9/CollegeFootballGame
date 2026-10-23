@@ -81,6 +81,10 @@ godot --headless --script res://tests/balance_test.gd
   Run Play): the highlighted route is the read the sim is on (`PlaySim.current_read()`), and the
   read clock (`PlaySim.read_clock()`) runs down the read_start wait, then each read. Run it after
   touching the QB's read logic in `play_sim.gd` or the read drawing in `field_view.gd`.
+- `tests/scramble_check.gd` — QB rollouts: a QB under `PlaySim.MIN_SCRAMBLE_SPEED` never rolls out, a
+  faster one does (only once pressured), a rollout ends in a throw, a tuck-and-run, a throw-away or a
+  sack, and a throw back across the run is penalized. Run it after touching the QB's pressure/scramble
+  logic in `play_sim.gd`.
 - `tests/redzone_check.gd` — regression test: scans every play for scoring/boundary bugs
   (a play ending in the end zone without being scored as a TD, a catch/interception recorded
   out of bounds). Extend this file's checks when you fix a new class of edge-case bug, so it
