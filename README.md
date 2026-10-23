@@ -54,7 +54,8 @@ Main menu → Manage Playbooks. Offensive and defensive playbooks are separate `
 (`kind` = offense / defense), saved as `.tres` files under `user://playbooks/` by `PlaybookStore`.
 A new one starts with every stock formation package (`Playbook.offense_packages()` /
 `defense_packages()`), so a new stock formation added there shows up in new playbooks. The
-editor's route drop-down lists `Playbook.ROUTES`, its run paths `RunPlay.PATHS`, and its
+editor's route drop-down lists `Playbook.ROUTES` plus the playbook's own `custom_routes` (drawn in
+the editor's Playbook Routes window; plays keep a copy and `refresh_route()` updates them), its run paths `RunPlay.PATHS`, and its
 coverage choices `Playbook.ZONES` plus man and blitz. Who takes the snap is the formation's
 `snap_slot`, which must be the player closest behind the center.
 

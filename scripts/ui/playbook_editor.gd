@@ -16,6 +16,7 @@ const AddPlayDialog := preload("res://scripts/ui/playbook/add_play_dialog.gd")
 const NewFormationDialog := preload("res://scripts/ui/playbook/new_formation_dialog.gd")
 const FormationPanel := preload("res://scripts/ui/playbook/formation_panel.gd")
 const PlayerTray := preload("res://scripts/ui/playbook/player_tray.gd")
+const RouteEditor := preload("res://scripts/ui/playbook/route_editor.gd")
 ## Where the ball sits for the play art, in yards from the offense's own goal.
 const PREVIEW_SPOT := 40.0
 
@@ -42,6 +43,7 @@ var tray: PlayerTray
 var draft: FormationDraft = null # the formation being built, while the builder is open
 var editing_formation: Resource = null # the formation the draft came from; null for a new one
 var confirm: ConfirmationDialog
+var route_editor: RouteEditor
 var sim: PlaySim
 ## The opposite side's play the preview lines up against, from the stock playbook.
 var stock := Playbook.make_default()
@@ -124,6 +126,7 @@ func _build_ui() -> void:
 	var bottom := PanelContainer.new()
 	bottom.custom_minimum_size = Vector2(0, 150)
 	options = PlayOptions.new()
+	options.playbook = playbook
 	options.changed.connect(_on_play_edited)
 	options.player_hovered.connect(_highlight_player)
 	bottom.add_child(options)
@@ -149,6 +152,14 @@ func _build_ui() -> void:
 	add_child(new_formation_dialog)
 	confirm = ConfirmationDialog.new()
 	add_child(confirm)
+	route_editor = RouteEditor.new()
+	route_editor.routes_changed.connect(_save)
+	# Plays running an edited route have been updated; show them as they are now.
+	route_editor.visibility_changed.connect(func() -> void:
+		if not route_editor.visible:
+			options.show_play(selected_play)
+			_draw_play())
+	add_child(route_editor)
 
 
 ## No team names here: the playbook's name (editable) on the left, the view in the middle,
@@ -176,6 +187,11 @@ func _build_header() -> Control:
 	view_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	h.add_child(view_title)
 
+	if is_offense():
+		var routes := UiStyle.button("Playbook Routes")
+		routes.tooltip_text = "See the stock routes and draw this playbook's own."
+		routes.pressed.connect(func() -> void: route_editor.open(playbook))
+		h.add_child(routes)
 	var back := UiStyle.button("Back to Playbooks")
 	back.pressed.connect(main.show_playbooks)
 	h.add_child(back)

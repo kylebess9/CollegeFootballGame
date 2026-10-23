@@ -19,6 +19,8 @@ const MAN_LABEL := "Man"
 const BLITZ_LABEL := "Blitz"
 
 var play: Resource = null
+## The playbook being edited, for its own routes on top of the stock tree.
+var playbook: Playbook = null
 var _left: VBoxContainer
 var _right: HFlowContainer
 var _errors: Label
@@ -112,7 +114,7 @@ func _build_pass(p: PassPlay) -> void:
 func _route_option(p: PassPlay, slot: String) -> OptionButton:
 	var opt := OptionButton.new()
 	opt.add_item(BLOCK_LABEL)
-	var names := Playbook.route_names()
+	var names := playbook.all_route_names() if playbook != null else Playbook.route_names()
 	var custom_route: Route = p.routes.get(slot)
 	if custom_route != null and not custom_route.name in names:
 		names.append(custom_route.name) # a route that isn't in the stock tree
@@ -124,7 +126,10 @@ func _route_option(p: PassPlay, slot: String) -> OptionButton:
 			p.set_block(slot)
 		else:
 			var r: String = names[i - 1]
-			p.set_route(slot, Playbook.route(r) if Playbook.ROUTES.has(r) else custom_route)
+			var made: Route = playbook.make_route(r) if playbook != null else null
+			if made == null:
+				made = Playbook.route(r) if Playbook.ROUTES.has(r) else custom_route
+			p.set_route(slot, made)
 		_edited()
 		_rebuild.call_deferred()) # the read order list changes with who's going out
 	return opt
