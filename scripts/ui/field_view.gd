@@ -18,6 +18,9 @@ var popups: Array[Dictionary] = [] # {text, pos (field), color, born}
 var clock := 0.0
 var font: Font
 var hovered: SimActor = null
+## A player to point out (e.g. the one whose options are being edited): drawn with a
+## pulsing ring.
+var highlighted: SimActor = null
 
 ## Emitted whenever the player under the mouse changes (null when none).
 signal hover_changed(actor: SimActor)
@@ -336,6 +339,10 @@ func _draw_players() -> void:
 			draw_arc(p, r + 2.5, 0, TAU, 24, Color.WHITE, 2.5)
 		if a == hovered:
 			draw_arc(p, r + 3.5, 0, TAU, 24, Color("#f2b134"), 2.5)
+		if a == highlighted:
+			var pulse := 0.5 + 0.5 * sin(clock * 6.0)
+			draw_circle(p, r * (1.9 + 0.3 * pulse), Color(1.0, 0.85, 0.2, 0.18 + 0.12 * pulse))
+			draw_arc(p, r * (1.9 + 0.3 * pulse), 0, TAU, 32, Color("#f2b134"), 3.0)
 		if not a.is_up():
 			var d := r * 0.6
 			draw_line(p - Vector2(d, d), p + Vector2(d, d), Color(0, 0, 0, 0.8), 2.0)

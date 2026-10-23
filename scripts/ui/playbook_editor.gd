@@ -22,7 +22,8 @@ const PREVIEW_SPOT := 40.0
 var main
 var playbook: Playbook
 var selected_play: Resource = null # OffensivePlay or DefensivePlay
-var _adding_to: Resource = null # the formation the add-play dialog is open for
+var _adding_to: Resource = null
+var _highlight_slot := "" # the player whose drop-down the mouse is over # the formation the add-play dialog is open for
 
 var gs: GameState # only feeds FieldView/PlaySim the two teams and the ball spot
 var field: FieldView
@@ -124,6 +125,7 @@ func _build_ui() -> void:
 	bottom.custom_minimum_size = Vector2(0, 150)
 	options = PlayOptions.new()
 	options.changed.connect(_on_play_edited)
+	options.player_hovered.connect(_highlight_player)
 	bottom.add_child(options)
 	root.add_child(bottom)
 	var tray_panel := PanelContainer.new()
@@ -210,11 +212,20 @@ func _draw_play() -> void:
 	field.ghost_routes = is_offense()
 	field.ghost_defense = not is_offense()
 	field.flip = false
+	_highlight_player(_highlight_slot) # keep pointing him out after an edit redraws the play
+
+
+## Points out the player whose drop-down the mouse is over.
+func _highlight_player(slot: String) -> void:
+	_highlight_slot = slot
+	var key := ("O:" if is_offense() else "D:") + slot
+	field.highlighted = sim.slots.get(key) if sim != null and slot != "" else null
 
 
 func _clear_sim() -> void:
 	if field != null:
 		field.sim = null
+		field.highlighted = null
 	if sim != null:
 		sim.dispose()
 		sim = null

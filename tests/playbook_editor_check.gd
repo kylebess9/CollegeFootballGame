@@ -213,6 +213,16 @@ func _check_screens(off: Playbook, def: Playbook, a: Team, b: Team) -> void:
 			ed.select_play(p)
 			await process_frame
 			_expect(ed.selected_play == p and ed.field.sim != null, "%s: selecting %s draws it" % [pb.name, p.name])
+		var with_players := plays.filter(func(p: Resource) -> bool: return not p is RunPlay)
+		if not with_players.is_empty():
+			ed.select_play(with_players[-1])
+			await process_frame
+			var opt: Control = ed.options.find_children("*", "OptionButton", true, false)[-1]
+			opt.mouse_entered.emit()
+			_expect(ed.field.highlighted != null and ed.field.highlighted.slot == opt.get_parent().get_child(0).text.split(" ")[0],
+				"%s: hovering a player's drop-down highlights him on the field" % pb.name)
+			opt.mouse_exited.emit()
+			_expect(ed.field.highlighted == null, "%s: and leaving it clears the highlight" % pb.name)
 		await _edit_through_ui(ed)
 		await _build_through_ui(ed)
 		ed.queue_free()

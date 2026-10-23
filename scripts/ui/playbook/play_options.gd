@@ -9,6 +9,9 @@ extends HBoxContainer
 ## beside them. Emits `changed` after every edit so the editor can redraw and save.
 
 signal changed
+## The player whose cell the mouse is over (or whose drop-down is open), "" when none, so
+## the editor can point him out on the field.
+signal player_hovered(slot: String)
 
 const BLOCK_LABEL := "Pass Block"
 const MAN_LABEL := "Man"
@@ -37,6 +40,7 @@ func _ready() -> void:
 
 func show_play(p: Resource) -> void:
 	play = p
+	player_hovered.emit("")
 	for c in _left.get_children() + _right.get_children():
 		c.queue_free()
 	if p == null:
@@ -182,9 +186,20 @@ func _build_defense(p: DefensivePlay) -> void:
 func _player_cell(slot: String, position: String, control: Control) -> Control:
 	var v := VBoxContainer.new()
 	v.custom_minimum_size = Vector2(140, 0)
-	v.add_child(UiStyle.label("%s  (%s)" % [slot, position], 13, UiStyle.MUTED))
+	var caption := UiStyle.label("%s  (%s)" % [slot, position], 13, UiStyle.MUTED)
+	caption.mouse_filter = Control.MOUSE_FILTER_PASS
+	v.add_child(caption)
 	control.custom_minimum_size = Vector2(140, 0)
 	v.add_child(control)
+	var popup: PopupMenu = control.get_popup() if control is OptionButton else null
+	for c in [caption, control]:
+		c.mouse_entered.connect(func() -> void: player_hovered.emit(slot))
+		# Keep him highlighted while his drop-down list is open.
+		c.mouse_exited.connect(func() -> void:
+			if popup == null or not popup.visible:
+				player_hovered.emit(""))
+	if popup != null:
+		popup.popup_hide.connect(func() -> void: player_hovered.emit(""))
 	return v
 
 
