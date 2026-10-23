@@ -1,8 +1,9 @@
 extends HBoxContainer
 ## The playbook editor's bottom panel: the main options of the selected play.
 ##   Pass play      - drop, read start and play action on the left; then every receiver
-##                    and back with a route or Pass Block, and the QB's read order (linemen
-##                    always block and aren't listed).
+##                    and back with a route or Pass Block, and the QB's read order as a
+##                    list of the route runners to drag into order (linemen always block
+##                    and aren't listed).
 ##   Run play       - the run path (inside / outside).
 ##   Defensive call - "run first" on the left; on the right every defender off the line,
 ##                    each with Man, Blitz or a zone.
@@ -14,6 +15,7 @@ signal changed
 ## the editor can point him out on the field.
 signal player_hovered(slot: String)
 
+const ReadOrderList := preload("res://scripts/ui/playbook/read_order_list.gd")
 const BLOCK_LABEL := "Pass Block"
 const MAN_LABEL := "Man"
 const BLITZ_LABEL := "Blitz"
@@ -95,7 +97,7 @@ func _build_pass(p: PassPlay) -> void:
 	_left.add_child(tip)
 
 	# Linemen always block, so they aren't listed. Routes on the left, the QB's read order
-	# on the right.
+	# (route runners only, dragged into order) on the right.
 	var eligible := p.formation.non_snap_slots().filter(func(sl: String) -> bool: return p.formation.is_eligible(sl))
 	var split := HBoxContainer.new()
 	split.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -110,7 +112,7 @@ func _build_pass(p: PassPlay) -> void:
 	for slot in eligible:
 		route_flow.add_child(_player_cell(slot, p.formation.spot(slot).position, _route_option(p, slot)))
 	split.add_child(VSeparator.new())
-	_build_read_order(p, eligible, _section(split, "READ ORDER"))
+	_build_read_order(p, _section(split, "READ ORDER"))
 
 
 ## A player's route drop-down: Pass Block or any route in the tree.
@@ -138,40 +140,18 @@ func _route_option(p: PassPlay, slot: String) -> OptionButton:
 	return opt
 
 
-## The QB's progression: each route runner, in order, with a 1..X drop-down to move him.
-## Blockers are listed after them, grayed out.
-func _build_read_order(p: PassPlay, eligible: Array, col: VBoxContainer) -> void:
-	var grid := GridContainer.new()
-	grid.columns = 4
-	grid.add_theme_constant_override("h_separation", 10)
-	grid.add_theme_constant_override("v_separation", 6)
-	col.add_child(grid)
-	var blockers := eligible.filter(func(sl: String) -> bool: return not sl in p.reads)
-	for slot in p.reads + blockers:
-		var reading: bool = slot in p.reads
-		var caption := UiStyle.label("%s  %s" % [slot, p.job(slot) if reading else ""], 14,
-			UiStyle.TEXT if reading else UiStyle.MUTED)
-		caption.custom_minimum_size = Vector2(110, 0)
-		caption.mouse_filter = Control.MOUSE_FILTER_PASS
-		var opt := OptionButton.new()
-		opt.custom_minimum_size = Vector2(64, 0)
-		if reading:
-			for n in p.reads.size():
-				opt.add_item(str(n + 1))
-			opt.select(p.reads.find(slot))
-			opt.tooltip_text = "Where %s comes in the QB's progression." % slot
-			opt.item_selected.connect(func(i: int) -> void:
-				p.set_read_priority(slot, i + 1)
-				_edited()
-				_rebuild.call_deferred())
-		else:
-			opt.add_item("-")
-			opt.disabled = true
-			opt.tooltip_text = "%s is blocking, so the QB doesn't read him." % slot
-			caption.modulate.a = 0.6
-		_hover_hooks(slot, [caption, opt], opt)
-		grid.add_child(caption)
-		grid.add_child(opt)
+## The QB's progression: the route runners in order, dragged up and down to change it.
+func _build_read_order(p: PassPlay, col: VBoxContainer) -> void:
+	var list := ReadOrderList.new()
+	col.add_child(list)
+	list.show_reads(p)
+	list.player_hovered.connect(func(slot: String) -> void: player_hovered.emit(slot))
+	list.moved.connect(func(slot: String, rank: int) -> void:
+		p.set_read_priority(slot, rank)
+		_edited()
+		_rebuild.call_deferred())
+	var hint := UiStyle.label("Drag to reorder. Pass blockers aren't read.", 12, UiStyle.MUTED)
+	col.add_child(hint)
 
 
 func _section(parent: Control, title: String) -> VBoxContainer:
