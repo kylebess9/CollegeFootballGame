@@ -1,11 +1,13 @@
 extends Control
-## Practice mode: no clock, no score, no downs. Pick an offensive play, then a defensive
-## coverage, watch it develop, and the ball resets to the same spot for another rep.
+## Practice mode: no clock, no score, no downs. Pick an offensive formation and play, then a
+## defensive formation and coverage, watch it develop, and the ball resets to the same spot
+## for another rep.
 ## This is a separate screen from match_screen.gd (not a mode flag on it) since the two
 ## have very little in common once the clock/score/down machinery is gone.
 
 const FieldView := preload("res://scripts/ui/field_view.gd")
 const PlayerEditor := preload("res://scripts/ui/player_editor.gd")
+const PlayCaller := preload("res://scripts/ui/play_caller.gd")
 const SPEEDS := [0.5, 1.0, 2.0, 4.0]
 const POST_PLAY_PAUSE := 1.6
 
@@ -23,6 +25,7 @@ var editing := false # true while the debug player editor is open; suspends hove
 var call_title: Label
 var call_hint: Label
 var call_buttons: HFlowContainer
+var caller: PlayCaller
 var spot_spin: SpinBox
 var speed_option: OptionButton
 
@@ -162,6 +165,10 @@ func _build_call_panel() -> Control:
 	call_buttons.add_theme_constant_override("h_separation", 8)
 	call_buttons.add_theme_constant_override("v_separation", 8)
 	left.add_child(call_buttons)
+	caller = PlayCaller.new(call_title, call_hint, call_buttons)
+	caller.called.connect(_on_called)
+	caller.preview.connect(_on_caller_preview)
+	caller.backed_out.connect(_on_backed_out)
 
 	var right := VBoxContainer.new()
 	right.custom_minimum_size = Vector2(230, 0)
@@ -200,7 +207,7 @@ func _on_spot_changed(v: float) -> void:
 	practice_spot = v
 	_reset_spot()
 	if state == "calling_off" or state == "calling_def":
-		_show_lineup(pending_off) # live-update the preview lineup as the spot changes
+		_on_caller_preview(caller.rest_play(), false) # live-update the preview lineup as the spot changes
 
 
 func _log_line(bb: String) -> void:
@@ -263,80 +270,73 @@ func _player_card_bbcode(a: SimActor) -> String:
 
 # ---------------------------------------------------------------- rep flow
 
-## Step 1: show offensive plays.
+## Step 1: the offense picks a formation, then a play in it.
 func _begin_rep() -> void:
 	_reset_spot()
 	state = "calling_off"
 	pending_off = ""
 	pending_def = ""
-	_show_lineup()
-	for c in call_buttons.get_children():
-		c.queue_free()
-	call_title.text = "Pick an offensive play."
-	call_hint.text = "Hover a play to see what it does."
-	var pb := gs.offense_playbook()
-	for name in pb.offense_names():
-		var b := UiStyle.button(name, pb.offense_play(name).description)
-		b.pressed.connect(_offense_called.bind(name))
-		_hook_preview(b, name, "")
-		call_buttons.add_child(b)
+	caller.back_text = ""
+	caller.start(gs.offense_playbook(), Playbook.OFFENSE, "OFFENSE.")
 
 
-## Step 2: show defensive coverages, now that the offensive play is set.
+## Step 2: the defense picks a formation, then a call in it, now that the offensive play is
+## set. Its formation list has a back button to change the offensive play.
 func _offense_called(call: String) -> void:
 	if state != "calling_off":
 		return
 	pending_off = call
 	state = "calling_def"
-	_show_lineup(call) # keep the chosen play's routes up while the coverage is picked
-	for c in call_buttons.get_children():
-		c.queue_free()
-	call_title.text = "%s. Pick a defensive coverage." % call
-	call_hint.text = "Hover a call to see its strengths."
-	var pb := gs.defense_playbook()
-	for name in pb.defense_names():
-		var b := UiStyle.button(name, pb.defense_play(name).description)
-		b.pressed.connect(_defense_called.bind(name))
-		_hook_preview(b, "", name)
-		call_buttons.add_child(b)
+	caller.back_text = "< Change offense play"
+	caller.start(gs.defense_playbook(), Playbook.DEFENSE, "DEFENSE vs %s." % call)
 
 
 func _defense_called(call: String) -> void:
 	if state != "calling_def":
 		return
 	pending_def = call
-	for c in call_buttons.get_children():
-		c.queue_free()
 	_start_play()
 
 
-## Shows both teams lined up at the ball while a play is being called. With off_play / def_play
-## set, the lineup uses that call's design and draws it as a ghost overlay (routes for the
-## offense; man lines, zones and blitz arrows for the defense).
-func _show_lineup(off_play: String = "", def_play: String = "") -> void:
+func _on_called(call: String) -> void:
+	if state == "calling_off":
+		_offense_called(call)
+	elif state == "calling_def":
+		_defense_called(call)
+
+
+func _on_backed_out() -> void:
+	if state == "calling_def":
+		_begin_rep()
+
+
+## Shows both teams lined up at the ball while a play is being called, in these plays'
+## formations (each playbook's first play when empty). ghost_off / ghost_def also draw the
+## play itself as an overlay (routes for the offense; man lines, zones and blitz arrows for
+## the defense).
+func _show_lineup(off_play: String = "", def_play: String = "", ghost_off := false, ghost_def := false) -> void:
 	var p := PlaySim.new()
-	p.setup(gs.offense(), gs.defense(), gs.offense_play(off_play if off_play != "" else "Inside Run"),
-		gs.defense_play(def_play if def_play != "" else "Cover 3"), gs.ball_on, gs.spot_y,
+	p.setup(gs.offense(), gs.defense(),
+		gs.offense_playbook().offense_play_or_first(off_play),
+		gs.defense_playbook().defense_play_or_first(def_play), gs.ball_on, gs.spot_y,
 		gs.situation(), Dice.new(1))
 	if sim != null:
 		sim.dispose()
 	sim = p
 	field.sim = p
 	field.preview = true
-	field.ghost_routes = off_play != ""
-	field.ghost_defense = def_play != ""
+	field.ghost_routes = ghost_off
+	field.ghost_defense = ghost_def
 	field.flip = false
 
 
-## Hovering a play button previews it on the field. While the coverage is being picked, the
+## Hovering a formation or play previews it on the field. While the defense is calling, the
 ## chosen offensive play stays drawn so the two can be compared.
-func _hook_preview(b: Button, off_play: String, def_play: String) -> void:
-	b.mouse_entered.connect(func() -> void:
-		if state == "calling_off" or state == "calling_def":
-			_show_lineup(off_play if off_play != "" else pending_off, def_play))
-	b.mouse_exited.connect(func() -> void:
-		if state == "calling_off" or state == "calling_def":
-			_show_lineup(pending_off))
+func _on_caller_preview(play_name: String, ghost: bool) -> void:
+	if state == "calling_off":
+		_show_lineup(play_name, "", ghost, false)
+	elif state == "calling_def":
+		_show_lineup(pending_off, play_name, true, ghost)
 
 
 func _start_play() -> void:
