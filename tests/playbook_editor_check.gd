@@ -5,6 +5,7 @@ extends SceneTree
 ##   godot --headless --script res://tests/playbook_editor_check.gd
 const PlaybookEditor := preload("res://scripts/ui/playbook_editor.gd")
 const PlaybooksScreen := preload("res://scripts/ui/playbooks_screen.gd")
+const PlayOptions := preload("res://scripts/ui/playbook/play_options.gd")
 
 var failures := 0
 
@@ -261,6 +262,7 @@ func _check_screens(off: Playbook, def: Playbook, a: Team, b: Team) -> void:
 		await _build_through_ui(ed)
 		if ed.is_offense():
 			await _routes_through_ui(ed)
+			await _play_route_through_ui(ed)
 		ed.queue_free()
 		await process_frame
 	stub.queue_free()
@@ -314,6 +316,8 @@ func _routes_through_ui(ed: Node) -> void:
 	re._name_edit.text = "slant"
 	re._on_rename("slant")
 	_expect(re._error.text != "" and pb.custom_route("slant") == null, "a route can't take a stock route's name")
+	re._on_rename("custom")
+	_expect(re._error.text != "" and pb.custom_route("custom") == null, "\"Custom\" is kept for routes drawn in one play")
 	re._on_rename("bang")
 	_expect(pb.custom_route("bang") == r, "renaming a route")
 	re.hide()
@@ -331,6 +335,77 @@ func _routes_through_ui(ed: Node) -> void:
 	_expect(offered, "the play options offer the playbook's own route")
 	re._delete_selected()
 	_expect(pb.custom_route("bang") == null, "deleting a route")
+
+
+## Clicks a receiver on the editor's field and reshapes his route there: it becomes the
+## play's own "Custom" route (the playbook's routes untouched), survives a reload, and picking
+## a route from his drop-down swaps it back out.
+func _play_route_through_ui(ed: Node) -> void:
+	var pb: Playbook = ed.playbook
+	var pp: PassPlay = null
+	for p in pb.offense_plays():
+		if p is PassPlay and p.formation.has_slot("WR1"):
+			pp = p
+	var slot := "WR1"
+	pp.set_route(slot, Playbook.route("go")) # one long leg, to hover the middle of
+	ed.select_play(pp)
+	ed.field.size = Vector2(1200, 540)
+	ed.field._layout()
+	await process_frame
+	var ov: PlayRouteOverlay = ed.route_overlay
+	var click := InputEventMouseButton.new()
+	click.button_index = MOUSE_BUTTON_LEFT
+	click.pressed = true
+	click.position = Vector2(2, 2)
+	ov._gui_input(click)
+	_expect(ov.slot == "" and not ov.editable, "clicking off the players picks nobody")
+	var actor: SimActor = ed.sim.slots["O:" + slot]
+	click.position = ed.field.to_screen(actor.pos)
+	ov._gui_input(click)
+	click.pressed = false
+	ov._gui_input(click)
+	_expect(ov.slot == slot and ov.editable, "clicking a receiver on the field picks his route")
+	var hover := InputEventMouseMotion.new()
+	hover.position = (ov.to_screen(Vector2.ZERO) + ov.to_screen(pp.routes[slot].points[0])) * 0.5
+	ov._gui_input(hover)
+	_expect(ov._ghost_index == 0, "hovering his route's line shows a new point")
+	var at: Vector2 = ov._ghost
+	click.pressed = true
+	click.position = hover.position
+	ov._gui_input(click)
+	var drag := InputEventMouseMotion.new()
+	for to in [Vector2(10, 2), Vector2(12, 4)]: # each move redraws the play; the drag carries on
+		drag.position = ov.to_screen(to)
+		ov._gui_input(drag)
+	click.pressed = false
+	ov._gui_input(click)
+	await process_frame
+	var r: Route = pp.routes[slot]
+	_expect(r.name == Route.CUSTOM and r.points.size() == 2 and r.points[0] == Vector2(12, 4)
+		and r.points[1] == Vector2(45, 0), "adding and dragging a point makes it the play's own route: %s %s (ghost %s)" % [r.name, r.points, at])
+	_expect(Playbook.route("go").points == [Vector2(45, 0)] and pb.custom_route(Route.CUSTOM) == null,
+		"the playbook's routes are left alone")
+	var opt: OptionButton = null
+	for o in ed.options.find_children("*", "OptionButton", true, false):
+		if o.item_count > 1 and o.get_item_text(0) == PlayOptions.BLOCK_LABEL and o.get_parent().get_child(0).text.begins_with(slot + " "):
+			opt = o
+	_expect(opt != null and opt.get_item_text(opt.selected) == Route.CUSTOM, "his drop-down shows Custom")
+	var reloaded: Playbook = null
+	for saved in PlaybookStore.list(Playbook.OFFENSE):
+		if saved.name == pb.name:
+			reloaded = saved
+	var saved_route: Route = reloaded.offense_play(pp.name).routes[slot] if reloaded != null else null
+	_expect(saved_route != null and saved_route.name == Route.CUSTOM and saved_route.points == r.points,
+		"the play's own route is saved with the play")
+	for i in opt.item_count:
+		if opt.get_item_text(i) == "post":
+			opt.select(i)
+			opt.item_selected.emit(i)
+	await process_frame
+	_expect(pp.routes[slot].name == "post" and pp.routes[slot].points == Playbook.route("post").points,
+		"picking a route from the drop-down replaces the custom one")
+	_expect(ov.route == pp.routes[slot], "and the field shows the new route")
+	ed.select_play(null)
 
 
 func _edit_through_ui(ed: Node) -> void:

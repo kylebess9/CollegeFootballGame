@@ -4,7 +4,9 @@ extends OffensivePlay
 ##   drop        - yards the QB drops back before setting up
 ##   read_start  - seconds after the snap before the QB starts his progression
 ##   play_action - fake a handoff to the RB first
-##   routes      - slot -> Route for everyone running a pattern; other skill players block
+##   routes      - slot -> Route for everyone running a pattern; other skill players block.
+##                 Each play has its own copy; one named Route.CUSTOM was drawn for this play
+##                 alone (see customize())
 ##   protect     - slots kept in to block
 ##   reads       - the QB's progression, in order
 ##
@@ -66,6 +68,18 @@ func set_route(slot: String, r: Route) -> void:
 	protect.erase(slot)
 	if not slot in reads:
 		reads.append(slot)
+
+
+## Turns this player's route into one of the play's own (named Route.CUSTOM), so it can be
+## reshaped without touching the route it started as. Returns it; null if he isn't running one.
+func customize(slot: String) -> Route:
+	var r: Route = routes.get(slot)
+	if r == null or r.name == Route.CUSTOM:
+		return r
+	r = r.duplicate(true)
+	r.name = Route.CUSTOM
+	routes[slot] = r
+	return r
 
 
 ## Moves a route runner to `rank` (1 = first read) in the QB's progression; everyone
