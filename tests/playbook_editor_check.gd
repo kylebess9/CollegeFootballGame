@@ -258,6 +258,7 @@ func _check_screens(off: Playbook, def: Playbook, a: Team, b: Team) -> void:
 			var ranks := ed.options.find_children("*", "OptionButton", true, false).filter(
 				func(o: OptionButton) -> bool: return o.item_count > 0 and o.get_item_text(0) == "1")
 			_expect(ranks.size() == pp.reads.size(), "one read-order drop-down per route runner")
+		await _run_through_ui(ed)
 		await _edit_through_ui(ed)
 		await _build_through_ui(ed)
 		if ed.is_offense():
@@ -405,6 +406,44 @@ func _play_route_through_ui(ed: Node) -> void:
 	_expect(pp.routes[slot].name == "post" and pp.routes[slot].points == Playbook.route("post").points,
 		"picking a route from the drop-down replaces the custom one")
 	_expect(ov.route == pp.routes[slot], "and the field shows the new route")
+	ed.select_play(null)
+
+
+## Picks a defense to line up against (offense: None by default, kept from play to play)
+## and runs the selected play through to the end, back to the play art.
+func _run_through_ui(ed: Node) -> void:
+	var pb: Playbook = ed.playbook
+	var plays: Array = pb.offense_plays() if ed.is_offense() else pb.defense_plays()
+	ed.select_play(null)
+	_expect(ed.run_button.disabled, "%s: Run Play is off with no play selected" % pb.name)
+	ed.select_play(plays[0])
+	await process_frame
+	_expect(not ed.run_button.disabled, "%s: and on once one is" % pb.name)
+	if ed.is_offense():
+		_expect(ed.defense_pick.selected == 0 and ed.sim.defenders().is_empty(),
+			"the defense starts as None: no defenders on the field")
+		var stock_calls := 0
+		for f in Playbook.defense_packages():
+			stock_calls += f.plays.size()
+		_expect(ed.defense_pick.item_count == stock_calls + 1, "the defense list is None plus every stock call")
+		ed.defense_pick.select(1)
+		ed.defense_pick.item_selected.emit(1)
+		_expect(ed.sim.defenders().size() == 11, "picking a defense lines it up")
+		ed.select_play(plays[1])
+		_expect(ed.defense_pick.selected == 1 and ed.sim.def_play == ed.opponent_defense()
+			and ed.sim.defenders().size() == 11, "the defense stays picked moving to another play")
+		ed.defense_pick.select(0)
+		ed.defense_pick.item_selected.emit(0)
+	for p in plays.slice(0, 3):
+		ed.select_play(p)
+		ed.run_play()
+		_expect(ed.running and not ed.field.preview, "%s: Run Play starts %s" % [pb.name, p.name])
+		var ticks := 0
+		while ed.running and ticks < 2000:
+			ed._process(0.05)
+			ticks += 1
+		_expect(not ed.running and ed.field.preview and ed.sim != null and ed.sim.t == 0.0,
+			"%s: %s plays out, then the play art comes back" % [pb.name, p.name])
 	ed.select_play(null)
 
 

@@ -62,6 +62,10 @@ a route runner on the editor's field reshapes his route for that play alone (`Pl
 coverage choices `Playbook.ZONES` plus man and blitz. Who takes the snap is the formation's
 `snap_slot`, which must be the player closest behind the center.
 
+The editor's Run Play button plays the selected play out on its field. An offensive play runs
+against the defense picked beside it: None (an empty `DefensiveFormation`, so the play develops
+with no defenders) or any stock call; a defensive play runs against the stock Four Verticals.
+
 New formations are made in the editor's formation builder (Add Formation under the
 formations list, or a formation's pencil): pick how many players at each position, then drag
 them onto the field. `FormationDraft` (`scripts/ui/playbook/formation_draft.gd`) holds the
