@@ -43,6 +43,7 @@ const OPEN_THRESHOLD := 1.8
 const MIN_SCRAMBLE_SPEED := 3 # out of the pocket, a QB with at least this Speed keeps going: he throws or runs. Slower ones throw it away
 const ROLLOUT_TRIGGER := 3.5  # a QB starts rolling out when a free rusher gets this close (before he's actually pressured)
 const ROLLOUT_MIN_TIME := 0.7 # ...but not before the line has had a moment to engage
+const PANIC_OPEN := 0.3       # a rolling QB throws to anyone with at least this much room (OPEN_THRESHOLD otherwise)
 const ROLLOUT_SPEED := 0.85   # he rolls out at this fraction of his top speed
 const POCKET_HALF_WIDTH := 5.0 # past this far from the spot of the ball, he's out of the pocket
 const FAST_ROLLOUT_LOOK := 1.2 # a fast QB rolls on this long past the pocket, looking for a throw, before he must decide
@@ -627,22 +628,29 @@ func _qb_decide() -> void:
 				_start_read(0)
 
 
-## The QB on the move with the ball, still reading. He keeps running until he is out of the
-## pocket, then the speed check applies: a slower QB throws it away; a faster one rolls on a
-## little longer, throwing as soon as someone is open (a throw back across his run is harder),
-## else tucking it and running if there's a lane, or throwing it away.
+## The QB on the move with the ball, still reading. He's panicked: he throws to anyone with even
+## a little room (PANIC_OPEN), pressured and moving away penalties and all. Once he's out of the
+## pocket the speed check applies: a slower QB throws it away if the rush is still on him; a
+## faster one tucks it and runs if there's a lane and nobody is clearly open, else rolls on a
+## little longer and then throws it away.
 func _rollout_decide() -> void:
 	if roll_out_at < 0.0 and absf(qb.pos.y - ball_y) > POCKET_HALF_WIDTH:
 		roll_out_at = t
 	var out := roll_out_at >= 0.0
 	var fast := qb.r("spd") >= MIN_SCRAMBLE_SPEED
 	var near_sideline := qb.pos.y < SIDELINE_ROOM or qb.pos.y > FIELD_W - SIDELINE_ROOM
-	if out and not fast:
-		_throw_away("Out of the pocket, Speed %d" % qb.r("spd"))
-		return
 	var best := _best_option()
-	if out and best["actor"] != null and float(best["open"]) >= OPEN_THRESHOLD - 0.6:
+	var open := float(best["open"]) if best["actor"] != null else -99.0
+	if out and fast and open < OPEN_THRESHOLD - 0.6 and _scramble_lane(roll_side):
+		# Out of the pocket with room to run and nobody clearly open: he takes off.
+		_start_scramble("Speed %d" % qb.r("spd"))
+		return
+	if open >= PANIC_OPEN:
 		_throw(best["actor"], true)
+		return
+	var threat := _nearest_free_opponent(qb)
+	if out and not fast and threat != null and threat.pos.distance_to(qb.pos) < ROLLOUT_TRIGGER:
+		_throw_away("Out of the pocket, still pressured, Speed %d" % qb.r("spd"))
 		return
 	read_timer -= DT
 	var exhausted := false
@@ -652,8 +660,8 @@ func _rollout_decide() -> void:
 		else:
 			exhausted = true
 			_start_read(0)
-	var must_decide := t > 4.5 or (near_sideline and fast) or (out and (exhausted or t - roll_out_at >= FAST_ROLLOUT_LOOK))
-	if near_sideline and not fast:
+	var must_decide := t > 4.5 or near_sideline
+	if out and (exhausted or (fast and t - roll_out_at >= FAST_ROLLOUT_LOOK)):
 		must_decide = true
 	if not must_decide:
 		return
