@@ -1,10 +1,12 @@
 extends SceneTree
 ## QB scrambling (the rollout):
 ##   godot --headless --script res://tests/scramble_check.gd
-## - every QB slides away from the rush once a free rusher gets within PlaySim.ROLLOUT_TRIGGER, and
-##   never drifts up toward the line while doing it,
-## - out of the pocket, one under PlaySim.MIN_SCRAMBLE_SPEED never tucks and runs (he throws it
-##   away or throws to someone open), a faster one can (rare: a panicked rolling QB throws to anyone with room first),
+## - a QB with at least PlaySim.MIN_SCRAMBLE_SPEED slides away from the rush once a free rusher gets
+##   within PlaySim.THREAT_RANGE, and never drifts up toward the line while doing it,
+## - a slower QB never leaves the spot and never tucks and runs: he stands in and takes a tighter
+##   window (_panic_open, under OPEN_THRESHOLD) or throws it away,
+## - a rolling QB wants more room than OPEN_THRESHOLD before he throws, and tucks it and runs out
+##   of the pocket when nobody has that much,
 ## - a rolling QB keeps reading, and ends it with a throw, a tuck-and-run or a throw-away,
 ## - a throw back across the run is penalized and says so, and one with the run is not,
 ## - the pocket rules still hold: a QB who rolls out and is hit behind the line is sacked.
@@ -61,7 +63,7 @@ func _initialize() -> void:
 						if not rolled:
 							roll_x = sim.qb.pos.x
 							var threat := sim._nearest_free_opponent(sim.qb)
-							if threat == null or threat.pos.distance_to(sim.qb.pos) > PlaySim.ROLLOUT_TRIGGER + 1.0:
+							if threat == null or threat.pos.distance_to(sim.qb.pos) > PlaySim.THREAT_RANGE + 1.0:
 								rolled_unpressured += 1
 						max_forward = maxf(max_forward, sim.qb.pos.x - roll_x)
 						rolled = true
@@ -80,10 +82,12 @@ func _initialize() -> void:
 							if str(e["detail"]).begins_with("Accuracy") and str(e["detail"]).contains("pressured"):
 								with_run += 1
 				sim.dispose()
-	print("  rollouts at speed >= min: ", fast_rolls, " ends: ", ends)
-	print("  rollouts at speed < min: ", slow_rolls, " tucked and ran: ", slow_runs, "; at or over: ", fast_rolls, " ran: ", fast_runs)
-	_expect(slow_rolls > 0 and fast_rolls > 0, "slow and fast QBs both roll out when pressured")
-	_expect(slow_runs == 0, "a QB under the minimum scramble speed never tucks and runs")
+	print("  rollouts: %d at speed >= min (%d tucked and ran), %d below it (%d ran). Ends: %s" % [
+		fast_rolls, fast_runs, slow_rolls, slow_runs, ends])
+	_expect(fast_rolls > 0, "a QB at or over the minimum scramble speed rolls out when the rush closes")
+	_expect(slow_rolls == 0, "a slower one never leaves the pocket")
+	_expect(slow_runs == 0, "and never tucks and runs")
+	_expect(fast_runs > 0, "a rolling QB tucks it and runs when nobody has real room")
 	_expect(rolled_unpressured == 0, "and only once a rusher is close")
 	_expect(max_forward < 0.5, "and he never drifts up toward the line (most forward: %.2f yds)" % max_forward)
 	_expect(ends.size() > 1, "a rollout ends more than one way (throw, run, sack...)")

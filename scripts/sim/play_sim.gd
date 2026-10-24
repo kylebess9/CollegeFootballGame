@@ -40,11 +40,13 @@ const BOBBLE_STALL := 0.6     # a receiver who bobbles it and stays up stands st
 const LOOSE_REACH := 0.8      # how close a player has to be to try to scoop up a loose ball
 const FAKE_READ_DEPTH := 10.0 # safeties lined up shallower than this read play-action fakes
 const OPEN_THRESHOLD := 1.8
-const MIN_SCRAMBLE_SPEED := 3 # out of the pocket, a QB with at least this Speed keeps going: he throws or runs. Slower ones throw it away
-const ROLLOUT_TRIGGER := 3.5  # a QB starts rolling out when a free rusher gets this close (before he's actually pressured)
+const MIN_SCRAMBLE_SPEED := 3 # a QB with at least this Speed is a playmaker: he rolls out of a threatened pocket. Slower ones stand and throw
+const THREAT_RANGE := 3.5     # a free rusher this close has the QB's attention (before he's actually pressured)
 const ROLLOUT_MIN_TIME := 0.7 # ...but not before the line has had a moment to engage
-const PANIC_OPEN_BASE := -0.6 # a rolling QB throws to anyone with at least this much room, plus...
-const PANIC_OPEN_PER_SPD := 0.3 # ...this per point of Speed (a slower QB panics more; OPEN_THRESHOLD otherwise)
+const PANIC_OPEN_BASE := -0.6 # a threatened pocket QB throws to anyone with at least this much room, plus...
+const PANIC_OPEN_PER_SPD := 0.3 # ...this per point of Speed, so the slowest panic the most
+const ROLLOUT_OPEN_BASE := 2.2  # on the move he wants more room than OPEN_THRESHOLD before he throws...
+const ROLLOUT_OPEN_PER_SPD := 0.25 # ...and the faster he is, the more he holds out for, since running is his other option
 const ROLLOUT_BURST := 1.3    # he leaves the pocket at this multiple of his rollout speed...
 const ROLLOUT_BURST_TIME := 0.6 # ...for this long
 const ROLLOUT_SPEED := 0.85   # he rolls out at this fraction of his top speed
@@ -584,24 +586,27 @@ func _qb_decide() -> void:
 		if qb.pos.distance_to(qb_set) < 0.4 and t >= pass_play.read_start:
 			qb_state = "read"
 			_start_read(0)
-		elif threat_dist >= ROLLOUT_TRIGGER or t < ROLLOUT_MIN_TIME:
+		elif threat_dist >= THREAT_RANGE or t < ROLLOUT_MIN_TIME:
 			return
 
 	var reads := pass_play.reads
 	if qb_state == "rollout":
 		_rollout_decide()
 		return
-	if under_pressure:
-		var best := _best_option(20.0)
-		if best["actor"] != null and float(best["open"]) >= OPEN_THRESHOLD - 0.8:
-			_log("QB under pressure, gets it out", qb.pos, -1)
+	if threat_dist < THREAT_RANGE and t >= ROLLOUT_MIN_TIME:
+		if qb.r("spd") >= MIN_SCRAMBLE_SPEED:
+			# A playmaker gets off the spot and looks for a play on the move.
+			_start_rollout(_rollout_side())
+			return
+		# A pocket QB stands in and takes a tighter window instead, the slower the tighter.
+		var best := _best_option(25.0)
+		if best["actor"] != null and float(best["open"]) >= _panic_open():
+			_log("QB feels the rush and gets it out", qb.pos, -1)
 			_throw(best["actor"], true)
 			return
-
-	if threat_dist < ROLLOUT_TRIGGER and t >= ROLLOUT_MIN_TIME:
-		# Any QB, fast or slow, slides away from the rusher to buy his receivers time.
-		_start_rollout(_rollout_side())
-		return
+		if under_pressure:
+			_throw_away("Nowhere to go (Speed %d)" % qb.r("spd"))
+			return
 
 	if qb_state != "read":
 		return
@@ -632,29 +637,35 @@ func _qb_decide() -> void:
 				_start_read(0)
 
 
-## The QB on the move with the ball, still reading. He's panicked: he throws to anyone with even
-## a little room (a slower QB needs less), pressured and moving away penalties and all. Once he's out of the
-## pocket the speed check applies: a slower QB throws it away if the rush is still on him; a
-## faster one tucks it and runs if there's a lane and nobody is clearly open, else rolls on a
-## little longer and then throws it away.
+## How little room a threatened pocket QB will settle for. He can't run, so he takes the tight
+## window rather than eat the sack, and the slower he is the tighter it gets.
+func _panic_open() -> float:
+	return PANIC_OPEN_BASE + PANIC_OPEN_PER_SPD * qb.r("spd")
+
+
+## How much room a QB on the move wants before he throws: more than he'd need standing still,
+## since the throw loses speed and accuracy, and the faster he is the more running is worth.
+func _rollout_open() -> float:
+	return ROLLOUT_OPEN_BASE + ROLLOUT_OPEN_PER_SPD * float(qb.r("spd") - MIN_SCRAMBLE_SPEED)
+
+
+## The playmaking QB on the move with the ball, still reading. He throws only into real room
+## (_rollout_open), since a throw back across his run costs speed and accuracy. Once he's out of
+## the pocket with nothing like that open, he tucks it and runs if there's a lane. Cornered, he
+## takes whatever is there, or throws it away.
 func _rollout_decide() -> void:
 	if roll_out_at < 0.0 and absf(qb.pos.y - ball_y) > POCKET_HALF_WIDTH:
 		roll_out_at = t
 	var out := roll_out_at >= 0.0
-	var fast := qb.r("spd") >= MIN_SCRAMBLE_SPEED
 	var near_sideline := qb.pos.y < SIDELINE_ROOM or qb.pos.y > FIELD_W - SIDELINE_ROOM
 	var best := _best_option()
 	var open := float(best["open"]) if best["actor"] != null else -99.0
-	if out and fast and open < OPEN_THRESHOLD - 0.6 and _scramble_lane(roll_side):
-		# Out of the pocket with room to run and nobody clearly open: he takes off.
-		_start_scramble("Speed %d" % qb.r("spd"))
-		return
-	if open >= PANIC_OPEN_BASE + PANIC_OPEN_PER_SPD * qb.r("spd"):
+	if open >= _rollout_open():
 		_throw(best["actor"], true)
 		return
-	var threat := _nearest_free_opponent(qb)
-	if out and not fast and threat != null and threat.pos.distance_to(qb.pos) < ROLLOUT_TRIGGER:
-		_throw_away("Out of the pocket, still pressured, Speed %d" % qb.r("spd"))
+	if out and _scramble_lane(roll_side):
+		# Out of the pocket, nobody worth the throw, and room to run: he takes off.
+		_start_scramble("Speed %d" % qb.r("spd"))
 		return
 	read_timer -= DT
 	var exhausted := false
@@ -665,17 +676,19 @@ func _rollout_decide() -> void:
 			exhausted = true
 			_start_read(0)
 	var must_decide := t > 4.5 or near_sideline
-	if out and (exhausted or (fast and t - roll_out_at >= FAST_ROLLOUT_LOOK)):
+	if out and (exhausted or t - roll_out_at >= FAST_ROLLOUT_LOOK):
 		must_decide = true
 	if not must_decide:
 		return
-	if fast and _scramble_lane(roll_side):
+	if _scramble_lane(roll_side):
 		_start_scramble("Speed %d" % qb.r("spd"))
+	elif open >= OPEN_THRESHOLD - 0.6:
+		_throw(best["actor"], true)
 	else:
 		_throw_away("")
 
 
-## Which way a pressured QB slides: away from the nearest rusher, or the other way when
+## Which way a rolling QB slides: away from the nearest rusher, or the other way when
 ## that would put him on the sideline.
 func _rollout_side() -> float:
 	var threat := _nearest_free_opponent(qb)
