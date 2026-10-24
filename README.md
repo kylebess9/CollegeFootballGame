@@ -34,6 +34,8 @@ Ratings are 1-6. Skills (Soft Hands, Pass Rusher, Ball Hawk...) give re-rolls or
   editor screens build
 - `tests/team_playbook_check.gd` checks games use each team's assigned playbooks and the CPU only
   calls plays its playbook has
+- `tools/TestRunner/` is a .NET console app that runs every test and writes an HTML report:
+  `dotnet run --project tools/TestRunner -- --open` (see its README)
 
 ## Adding a play
 Plays live in a `Playbook` (`scripts/sim/playbook.gd`). Each team runs the offensive and defensive
