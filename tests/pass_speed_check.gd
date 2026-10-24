@@ -23,6 +23,7 @@ func _init() -> void:
 	var b := gen.make_team(1, Color.RED)
 	var pb := Playbook.make_default()
 	var qb: FootballPlayer = a.depth_chart()["QB"]
+	qb.ratings["spd"] = PlaySim.MIN_SCRAMBLE_SPEED # slower QBs throw a pressured pass away instead
 
 	var weak := {}
 	var strong := {}
@@ -89,7 +90,9 @@ func _throws(a: Team, b: Team, pb: Playbook, dice: Dice) -> Dictionary:
 						elif sim.ball_quality == "away":
 							pass
 						elif sim.pending_hurried:
-							st["hurried"].append(sim.ball_speed)
+							# Throws back across the run lose more: scramble_check covers those.
+							if not sim.threw_back:
+								st["hurried"].append(sim.ball_speed)
 						else:
 							st["clean"].append(sim.ball_speed)
 				sim.dispose()

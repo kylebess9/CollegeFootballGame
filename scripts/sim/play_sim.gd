@@ -40,6 +40,20 @@ const BOBBLE_STALL := 0.6     # a receiver who bobbles it and stays up stands st
 const LOOSE_REACH := 0.8      # how close a player has to be to try to scoop up a loose ball
 const FAKE_READ_DEPTH := 10.0 # safeties lined up shallower than this read play-action fakes
 const OPEN_THRESHOLD := 1.8
+const MIN_SCRAMBLE_SPEED := 3 # out of the pocket, a QB with at least this Speed keeps going: he throws or runs. Slower ones throw it away
+const ROLLOUT_TRIGGER := 3.5  # a QB starts rolling out when a free rusher gets this close (before he's actually pressured)
+const ROLLOUT_MIN_TIME := 0.7 # ...but not before the line has had a moment to engage
+const PANIC_OPEN_BASE := -0.6 # a rolling QB throws to anyone with at least this much room, plus...
+const PANIC_OPEN_PER_SPD := 0.3 # ...this per point of Speed (a slower QB panics more; OPEN_THRESHOLD otherwise)
+const ROLLOUT_BURST := 1.3    # he leaves the pocket at this multiple of his rollout speed...
+const ROLLOUT_BURST_TIME := 0.6 # ...for this long
+const ROLLOUT_SPEED := 0.85   # he rolls out at this fraction of his top speed
+const POCKET_HALF_WIDTH := 5.0 # past this far from the spot of the ball, he's out of the pocket
+const FAST_ROLLOUT_LOOK := 1.2 # a fast QB rolls on this long past the pocket, looking for a throw, before he must decide
+const SIDELINE_ROOM := 4.0    # a rolling QB must decide this close to the sideline
+const AWAY_MIN_GAP := 2.0     # ...when the target is at least this far across the field from him
+const AWAY_SPEED_LOSS := 0.2  # throwing back across a rollout loses this fraction of the pass speed...
+const AWAY_ACCURACY_PENALTY := 1 # ...and makes the accuracy roll this much harder
 const LANE_WIDTH := 2.0       # a defender this close to a receiver's path to the catch point is in his lane
 const MAX_TIME := 20.0
 const END_LINE_STOP := FIELD_LEN - 1.5 # receivers settle this deep in the end zone
@@ -85,14 +99,13 @@ var turnover_kind := "int" # result kind when a turnover's return is tackled
 
 # QB brain
 var qb: SimActor
-var qb_state := "drop" # drop, read, handed_off, thrown, scramble
+var qb_state := "drop" # drop, read, rollout, windup, handed_off, thrown, scramble
 var qb_set := Vector2.ZERO
 var read_index := 0
 var read_timer := 0.0
 var read_time := 0.0 # how long the current read lasts in all (read_timer counts it down)
 var read_noise := 0.0
 var under_pressure := false
-var pressure_decided := false
 var handed_off := false
 var run_side := 1
 var run_side_fixed := false # true when the RB lines up off to one side, so he always goes that way
@@ -102,6 +115,12 @@ var windup := 0.0
 var pending_rec: SimActor = null
 var pending_hurried := false
 var pending_away := false
+var threw_back := false # the last pass was thrown back across the QB's run
+var pending_move := Vector2.ZERO # the QB's velocity when he let it go, for throwing on the run
+var roll_side := 1.0 # which sideline a rolling QB heads for (+1 or -1 in y)
+var roll_dir := Vector2(0.0, 1.0) # the way he runs: away from the rusher, never up toward the line
+var roll_started := 0.0 # when the rollout began
+var roll_out_at := -1.0 # when the rolling QB got outside the pocket
 
 
 func setup(offense: Team, defense: Team, off_call: OffensivePlay, def_call: DefensivePlay, ball_on: float,
@@ -420,7 +439,7 @@ func goal_dir(a: SimActor) -> float:
 
 ## True while the QB still has the ball in the pocket (not yet a runner).
 func qb_in_pocket() -> bool:
-	return holder == qb and qb_state in ["drop", "read", "windup"]
+	return holder == qb and qb_state in ["drop", "read", "rollout", "windup"]
 
 
 func carrier_live() -> bool:
@@ -469,7 +488,7 @@ func step() -> void:
 		a.burst_time = maxf(0.0, a.burst_time - DT)
 
 	_handle_snap_events()
-	if not is_run and holder == qb and qb_state in ["drop", "read"]:
+	if not is_run and holder == qb and qb_state in ["drop", "read", "rollout"]:
 		_qb_decide()
 	elif qb_state == "windup" and holder == qb:
 		windup -= DT
@@ -565,26 +584,23 @@ func _qb_decide() -> void:
 		if qb.pos.distance_to(qb_set) < 0.4 and t >= pass_play.read_start:
 			qb_state = "read"
 			_start_read(0)
-		elif not under_pressure:
+		elif threat_dist >= ROLLOUT_TRIGGER or t < ROLLOUT_MIN_TIME:
 			return
 
 	var reads := pass_play.reads
+	if qb_state == "rollout":
+		_rollout_decide()
+		return
 	if under_pressure:
 		var best := _best_option(20.0)
 		if best["actor"] != null and float(best["open"]) >= OPEN_THRESHOLD - 0.8:
 			_log("QB under pressure, gets it out", qb.pos, -1)
 			_throw(best["actor"], true)
 			return
-		if not pressure_decided:
-			pressure_decided = true
-			var res := _test(qb, 7 - qb.r("awr"), "Pocket poise (Awareness)")
-			if res["ok"]:
-				if _scramble_lane():
-					_start_scramble(res["detail"])
-				else:
-					_throw_away(res["detail"])
-				return
-			_log("QB holds the ball too long", qb.pos, 0, res["detail"], "Holds it")
+
+	if threat_dist < ROLLOUT_TRIGGER and t >= ROLLOUT_MIN_TIME:
+		# Any QB, fast or slow, slides away from the rusher to buy his receivers time.
+		_start_rollout(_rollout_side())
 		return
 
 	if qb_state != "read":
@@ -616,6 +632,76 @@ func _qb_decide() -> void:
 				_start_read(0)
 
 
+## The QB on the move with the ball, still reading. He's panicked: he throws to anyone with even
+## a little room (a slower QB needs less), pressured and moving away penalties and all. Once he's out of the
+## pocket the speed check applies: a slower QB throws it away if the rush is still on him; a
+## faster one tucks it and runs if there's a lane and nobody is clearly open, else rolls on a
+## little longer and then throws it away.
+func _rollout_decide() -> void:
+	if roll_out_at < 0.0 and absf(qb.pos.y - ball_y) > POCKET_HALF_WIDTH:
+		roll_out_at = t
+	var out := roll_out_at >= 0.0
+	var fast := qb.r("spd") >= MIN_SCRAMBLE_SPEED
+	var near_sideline := qb.pos.y < SIDELINE_ROOM or qb.pos.y > FIELD_W - SIDELINE_ROOM
+	var best := _best_option()
+	var open := float(best["open"]) if best["actor"] != null else -99.0
+	if out and fast and open < OPEN_THRESHOLD - 0.6 and _scramble_lane(roll_side):
+		# Out of the pocket with room to run and nobody clearly open: he takes off.
+		_start_scramble("Speed %d" % qb.r("spd"))
+		return
+	if open >= PANIC_OPEN_BASE + PANIC_OPEN_PER_SPD * qb.r("spd"):
+		_throw(best["actor"], true)
+		return
+	var threat := _nearest_free_opponent(qb)
+	if out and not fast and threat != null and threat.pos.distance_to(qb.pos) < ROLLOUT_TRIGGER:
+		_throw_away("Out of the pocket, still pressured, Speed %d" % qb.r("spd"))
+		return
+	read_timer -= DT
+	var exhausted := false
+	if read_timer <= 0.0:
+		if read_index + 1 < pass_play.reads.size():
+			_start_read(read_index + 1)
+		else:
+			exhausted = true
+			_start_read(0)
+	var must_decide := t > 4.5 or near_sideline
+	if out and (exhausted or (fast and t - roll_out_at >= FAST_ROLLOUT_LOOK)):
+		must_decide = true
+	if not must_decide:
+		return
+	if fast and _scramble_lane(roll_side):
+		_start_scramble("Speed %d" % qb.r("spd"))
+	else:
+		_throw_away("")
+
+
+## Which way a pressured QB slides: away from the nearest rusher, or the other way when
+## that would put him on the sideline.
+func _rollout_side() -> float:
+	var threat := _nearest_free_opponent(qb)
+	var side := 1.0 if qb.pos.y < FIELD_W * 0.5 else -1.0
+	if threat != null and absf(threat.pos.y - qb.pos.y) > 0.3:
+		side = -signf(threat.pos.y - qb.pos.y)
+	if qb.pos.y + side * (SIDELINE_ROOM + 2.0) < 0.0 or qb.pos.y + side * (SIDELINE_ROOM + 2.0) > FIELD_W:
+		side = -side
+	return side
+
+
+func _start_rollout(side: float) -> void:
+	qb_state = "rollout"
+	roll_side = side
+	roll_dir = Vector2(0.0, side)
+	var threat := _nearest_free_opponent(qb)
+	if threat != null:
+		var away := (qb.pos - threat.pos).normalized()
+		roll_dir = Vector2(minf(away.x, 0.0) * 0.6, side).normalized()
+	roll_out_at = -1.0
+	roll_started = t
+	qb.job = "rollout"
+	_log("%s slides away from the rush" % qb.tag(), qb.pos, -1, "", "Rolls out")
+	_start_read(0)
+
+
 func _start_read(i: int) -> void:
 	read_index = i
 	var awr := qb.r("awr")
@@ -631,7 +717,7 @@ func _start_read(i: int) -> void:
 ## The receiver the QB is looking at right now in his progression, or null when he isn't
 ## reading (still in his drop, or the ball is gone). For display only.
 func current_read() -> SimActor:
-	if pass_play == null or qb_state != "read" or done:
+	if pass_play == null or not qb_state in ["read", "rollout"] or done:
 		return null
 	return slots.get("O:" + pass_play.reads[read_index])
 
@@ -645,7 +731,7 @@ func read_clock() -> Dictionary:
 	if qb_state == "drop":
 		var left := 0.0 if pass_play.read_start <= 0.0 else clampf(1.0 - t / pass_play.read_start, 0.0, 1.0)
 		return {"phase": "drop", "left": left}
-	if qb_state == "read":
+	if qb_state in ["read", "rollout"]:
 		return {"phase": "read", "left": clampf(read_timer / maxf(read_time, 0.01), 0.0, 1.0)}
 	return {}
 
@@ -753,12 +839,19 @@ func _best_option(max_dist: float = 999.0) -> Dictionary:
 	return {"actor": best_actor, "open": best_open}
 
 
-func _scramble_lane() -> bool:
+## Whether the QB has room to tuck it and run. A rolling QB (side != 0) runs upfield toward his
+## sideline, so only defenders ahead of him on that side count, not the one chasing from behind.
+func _scramble_lane(side: float = 0.0) -> bool:
 	for d in defenders():
 		if not d.is_free():
 			continue
 		var rel := d.pos - qb.pos
-		if rel.x > -1.0 and rel.x < 6.0 and absf(rel.y) < 4.0:
+		if rel.x <= -0.5 or rel.x >= 4.0:
+			continue
+		if side == 0.0:
+			if absf(rel.y) < 2.5:
+				return false
+		elif rel.y * side > -1.5 and rel.y * side < 3.5:
 			return false
 	return true
 
@@ -777,6 +870,9 @@ func _throw(rec: SimActor, hurried: bool) -> void:
 	pending_rec = rec
 	pending_hurried = hurried
 	pending_away = false
+	pending_move = qb.vel
+	if qb.job == "rollout":
+		qb.job = "idle" # plants his feet to throw; pending_move keeps how he was running
 	windup = 0.12 if hurried else 0.25
 
 
@@ -802,7 +898,15 @@ func _release(rec: SimActor, hurried: bool) -> void:
 		mod += 1
 	if qb.has_skill("Accurate"):
 		mod -= 1
-	var res := _test(qb, 7 - qb.r("pas") + mod, "Accuracy (%s, %d yds%s)" % [range_name, int(dist), ", pressured" if hurried else ""])
+	# Throwing back across the way he was running is harder and weaker.
+	var away := false
+	if absf(pending_move.y) > 1.0 and absf(land.y - qb.pos.y) > AWAY_MIN_GAP:
+		away = pending_move.y * (land.y - qb.pos.y) < 0.0
+	threw_back = away
+	if away:
+		mod += AWAY_ACCURACY_PENALTY
+	var res := _test(qb, 7 - qb.r("pas") + mod, "Accuracy (%s, %d yds%s%s)" % [range_name, int(dist),
+		", pressured" if hurried else "", ", throwing back across the run" if away else ""])
 	var target := land
 	# The QB led the receiver for a clean throw at his arm speed. A pressured throw comes out
 	# slower than he planned (the receiver may have to wait for it and defenders close in),
@@ -811,6 +915,8 @@ func _release(rec: SimActor, hurried: bool) -> void:
 	if hurried:
 		var max_loss := HURRY_SPEED_LOSS * (7 - qb.r("str")) / 6.0
 		speed *= 1.0 - dice.rng.randf_range(0.0, max_loss)
+	if away:
+		speed *= 1.0 - AWAY_SPEED_LOSS
 	if int(res["first"]) == 1 and not res["ok"]:
 		speed *= DUCK_SPEED
 		ball_quality = "duck"
@@ -830,6 +936,9 @@ func _release(rec: SimActor, hurried: bool) -> void:
 func _throw_away(detail: String) -> void:
 	qb_state = "windup"
 	pending_away = true
+	pending_move = Vector2.ZERO
+	if qb.job == "rollout":
+		qb.job = "idle"
 	windup = 0.15
 	_log("%s looks to throw it away" % qb.tag(), qb.pos, -1, detail, "")
 
@@ -881,6 +990,8 @@ func _move(a: SimActor) -> void:
 		speed *= 0.55
 	if a.job == "block" and holder == qb and not is_run:
 		speed *= 0.7
+	elif a.job == "rollout":
+		speed *= ROLLOUT_SPEED * (ROLLOUT_BURST if t < roll_started + ROLLOUT_BURST_TIME else 1.0)
 	var to := target - a.pos
 	var L := to.length()
 	if L < 0.05:
@@ -896,6 +1007,8 @@ func _desired(a: SimActor) -> Vector2:
 			if is_run:
 				return a.pos
 			return qb_set
+		"rollout":
+			return a.pos + roll_dir * 4.0
 		"idle":
 			return a.pos
 		"loose":
