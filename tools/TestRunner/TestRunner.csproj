@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <!-- Run on a newer .NET runtime too if 8 isn't installed. -->
+    <RollForward>Major</RollForward>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>TestRunner</AssemblyName>
+    <RootNamespace>TestRunner</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="testrunner.example.json" CopyToOutputDirectory="Never" />
+  </ItemGroup>
+
+</Project>

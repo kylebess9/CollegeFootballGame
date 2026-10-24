@@ -88,6 +88,9 @@ godot --headless --script res://tests/balance_test.gd
   out of bounds). Extend this file's checks when you fix a new class of edge-case bug, so it
   stays caught.
 
+To run them all at once with an HTML report, use the .NET runner in `tools/TestRunner/`
+(`dotnet run --project tools/TestRunner -- --godot <path> --checks-only`; see its README).
+
 When touching `scripts/sim/play_sim.gd`, `game_state.gd`, or `dice.gd`, always run
 `balance_test.gd` before and after (e.g. via `git stash`) and compare, since small probability
 changes compound over thousands of plays.
