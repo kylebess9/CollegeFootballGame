@@ -5,6 +5,8 @@ extends SceneTree
 ##   within PlaySim.THREAT_RANGE, and never drifts up toward the line while doing it,
 ## - a slower QB never leaves the spot and never tucks and runs: he stands in and takes a tighter
 ##   window (_panic_open, under OPEN_THRESHOLD) or throws it away,
+## - he assesses the rush only every PlaySim.QB_THREAT_CHECK_INTERVAL,
+## - he runs heads-down for PlaySim.ROLLOUT_READ_DELAY after committing: no read, no clock, no throw,
 ## - a rolling QB wants more room than OPEN_THRESHOLD before he throws, and tucks it and runs out
 ##   of the pocket when nobody has that much,
 ## - a rolling QB keeps reading, and ends it with a throw, a tuck-and-run or a throw-away,
@@ -38,6 +40,8 @@ func _initialize() -> void:
 	var slow_runs := 0
 	var fast_runs := 0
 	var rolled_unpressured := 0
+	var blind_breaks := 0
+	var check_gap_breaks := 0
 	var ends := {}
 	var with_run := 0
 	var rolled_sacks := 0
@@ -54,9 +58,22 @@ func _initialize() -> void:
 				var roll_x := 0.0
 				var ran := false
 				var guard := 0
+				var roll_at := -1.0
+				var last_check := -99.0
 				while not sim.done and guard < 900:
 					sim.step()
 					guard += 1
+					if sim.threat_checked_at > last_check:
+						if last_check > -90.0 and sim.threat_checked_at - last_check < PlaySim.QB_THREAT_CHECK_INTERVAL - 0.001:
+							check_gap_breaks += 1
+						last_check = sim.threat_checked_at
+					if sim.qb_state == "rollout" and roll_at < 0.0:
+						roll_at = sim.t
+					if roll_at >= 0.0 and sim.t < roll_at + PlaySim.ROLLOUT_READ_DELAY:
+						# Heads down: no read, no clock, and the ball can't be gone.
+						if sim.current_read() != null or not sim.read_clock().is_empty() \
+								or sim.qb_state in ["windup", "thrown"]:
+							blind_breaks += 1
 					if sim.qb_state == "scramble":
 						ran = true
 					if sim.qb_state == "rollout":
@@ -89,6 +106,8 @@ func _initialize() -> void:
 	_expect(slow_runs == 0, "and never tucks and runs")
 	_expect(fast_runs > 0, "a rolling QB tucks it and runs when nobody has real room")
 	_expect(rolled_unpressured == 0, "and only once a rusher is close")
+	_expect(check_gap_breaks == 0, "he assesses the rush no more often than QB_THREAT_CHECK_INTERVAL")
+	_expect(blind_breaks == 0, "and runs heads-down through ROLLOUT_READ_DELAY: no read, clock or throw")
 	_expect(max_forward < 0.5, "and he never drifts up toward the line (most forward: %.2f yds)" % max_forward)
 	_expect(ends.size() > 1, "a rollout ends more than one way (throw, run, sack...)")
 	_expect(with_run > 0, "rollout throws are made on the run")

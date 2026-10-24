@@ -42,6 +42,8 @@ const FAKE_READ_DEPTH := 10.0 # safeties lined up shallower than this read play-
 const OPEN_THRESHOLD := 1.8
 const MIN_SCRAMBLE_SPEED := 3 # a QB with at least this Speed is a playmaker: he rolls out of a threatened pocket. Slower ones stand and throw
 const THREAT_RANGE := 3.5     # a free rusher this close has the QB's attention (before he's actually pressured)
+const QB_THREAT_CHECK_INTERVAL := 0.6 # interval in which the QB assesses potential rushing threats
+const ROLLOUT_READ_DELAY := 1.2 # initial delay before a scrambling QB will look downfield: no throws or reads until then
 const ROLLOUT_MIN_TIME := 0.7 # ...but not before the line has had a moment to engage
 const PANIC_OPEN_BASE := -0.6 # a threatened pocket QB throws to anyone with at least this much room, plus...
 const PANIC_OPEN_PER_SPD := 0.3 # ...this per point of Speed, so the slowest panic the most
@@ -107,7 +109,10 @@ var read_index := 0
 var read_timer := 0.0
 var read_time := 0.0 # how long the current read lasts in all (read_timer counts it down)
 var read_noise := 0.0
-var under_pressure := false
+var under_pressure := false # the rush was on him as of his last threat check
+var threat_dist := INF      # how far off the nearest free rusher was at that check
+var threat_checked_at := -99.0
+var rollout_reading := false # a rolling QB has waited out ROLLOUT_READ_DELAY and is looking again
 var handed_off := false
 var run_side := 1
 var run_side_fixed := false # true when the RB lines up off to one side, so he always goes that way
@@ -578,22 +583,27 @@ func _reads_fake(d: SimActor) -> bool:
 # ---------------------------------------------------------------- QB decisions
 
 func _qb_decide() -> void:
-	var threat := _nearest_free_opponent(qb)
-	var threat_dist: float = INF if threat == null else threat.pos.distance_to(qb.pos)
-	under_pressure = threat_dist < 1.3 + 0.3 * qb.r("awr")
+	# He only looks at the rush every QB_THREAT_CHECK_INTERVAL, and acts on what he saw then.
+	var checking := t >= threat_checked_at + QB_THREAT_CHECK_INTERVAL
+	if checking:
+		threat_checked_at = t
+		var threat := _nearest_free_opponent(qb)
+		threat_dist = INF if threat == null else threat.pos.distance_to(qb.pos)
+		under_pressure = threat_dist < 1.3 + 0.3 * qb.r("awr")
+	var threatened := checking and threat_dist < THREAT_RANGE and t >= ROLLOUT_MIN_TIME
 
 	if qb_state == "drop":
 		if qb.pos.distance_to(qb_set) < 0.4 and t >= pass_play.read_start:
 			qb_state = "read"
 			_start_read(0)
-		elif threat_dist >= THREAT_RANGE or t < ROLLOUT_MIN_TIME:
+		elif not threatened:
 			return
 
 	var reads := pass_play.reads
 	if qb_state == "rollout":
 		_rollout_decide()
 		return
-	if threat_dist < THREAT_RANGE and t >= ROLLOUT_MIN_TIME:
+	if threatened:
 		if qb.r("spd") >= MIN_SCRAMBLE_SPEED:
 			# A playmaker gets off the spot and looks for a play on the move.
 			_start_rollout(_rollout_side())
@@ -649,13 +659,19 @@ func _rollout_open() -> float:
 	return ROLLOUT_OPEN_BASE + ROLLOUT_OPEN_PER_SPD * float(qb.r("spd") - MIN_SCRAMBLE_SPEED)
 
 
-## The playmaking QB on the move with the ball, still reading. He throws only into real room
-## (_rollout_open), since a throw back across his run costs speed and accuracy. Once he's out of
-## the pocket with nothing like that open, he tucks it and runs if there's a lane. Cornered, he
-## takes whatever is there, or throws it away.
+## The playmaking QB on the move with the ball. He committed to getting out, so for the first
+## ROLLOUT_READ_DELAY he just runs: no looking downfield, no throw. After that he throws only into
+## real room (_rollout_open), since a throw back across his run costs speed and accuracy. Once he's
+## out of the pocket with nothing like that open, he tucks it and runs if there's a lane. Cornered,
+## he takes whatever is there, or throws it away.
 func _rollout_decide() -> void:
 	if roll_out_at < 0.0 and absf(qb.pos.y - ball_y) > POCKET_HALF_WIDTH:
 		roll_out_at = t
+	if t < roll_started + ROLLOUT_READ_DELAY:
+		return
+	if not rollout_reading:
+		rollout_reading = true
+		_start_read(0)
 	var out := roll_out_at >= 0.0
 	var near_sideline := qb.pos.y < SIDELINE_ROOM or qb.pos.y > FIELD_W - SIDELINE_ROOM
 	var best := _best_option()
@@ -710,9 +726,9 @@ func _start_rollout(side: float) -> void:
 		roll_dir = Vector2(minf(away.x, 0.0) * 0.6, side).normalized()
 	roll_out_at = -1.0
 	roll_started = t
+	rollout_reading = false
 	qb.job = "rollout"
 	_log("%s slides away from the rush" % qb.tag(), qb.pos, -1, "", "Rolls out")
-	_start_read(0)
 
 
 func _start_read(i: int) -> void:
@@ -732,6 +748,8 @@ func _start_read(i: int) -> void:
 func current_read() -> SimActor:
 	if pass_play == null or not qb_state in ["read", "rollout"] or done:
 		return null
+	if qb_state == "rollout" and not rollout_reading:
+		return null # heads down, getting out of the pocket
 	return slots.get("O:" + pass_play.reads[read_index])
 
 
@@ -744,6 +762,8 @@ func read_clock() -> Dictionary:
 	if qb_state == "drop":
 		var left := 0.0 if pass_play.read_start <= 0.0 else clampf(1.0 - t / pass_play.read_start, 0.0, 1.0)
 		return {"phase": "drop", "left": left}
+	if qb_state == "rollout" and not rollout_reading:
+		return {}
 	if qb_state in ["read", "rollout"]:
 		return {"phase": "read", "left": clampf(read_timer / maxf(read_time, 0.01), 0.0, 1.0)}
 	return {}

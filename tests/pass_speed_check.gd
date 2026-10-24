@@ -23,7 +23,7 @@ func _init() -> void:
 	var b := gen.make_team(1, Color.RED)
 	var pb := Playbook.make_default()
 	var qb: FootballPlayer = a.depth_chart()["QB"]
-	qb.ratings["spd"] = PlaySim.MIN_SCRAMBLE_SPEED # slower QBs throw a pressured pass away instead
+	qb.ratings["spd"] = 1 # a pocket QB stands in and throws pressured passes; a faster one rolls out
 
 	var weak := {}
 	var strong := {}
