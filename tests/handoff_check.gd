@@ -95,7 +95,11 @@ func _init() -> void:
 			caught += _count(sim, "gathers in the pitch")
 			drops += _count(sim, "drops the pitch") + _count(sim, "can't reach the backward pass")
 			if _count(sim, "drops the pitch") + _count(sim, "can't reach the backward pass") > 0:
-				fumbles += _count(sim, "FUMBLE! RB")
+				# Not a later fumble on the tackle after the RB falls on it.
+				for e in sim.events:
+					var txt := str(e["text"])
+					if txt.begins_with("FUMBLE! RB") and not txt.ends_with("'s team falls on it"):
+						fumbles += 1
 				kinds[r["kind"]] = int(kinds.get(r["kind"], 0)) + 1
 			if r["thrown"] or not r["kind"] in ["tackle", "oob", "td", "safety", "fumble", "def_td", "int", "sack"]:
 				bad += 1
