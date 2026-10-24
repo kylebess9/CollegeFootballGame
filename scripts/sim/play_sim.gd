@@ -43,6 +43,8 @@ const OPEN_THRESHOLD := 1.8
 const LANE_WIDTH := 2.0       # a defender this close to a receiver's path to the catch point is in his lane
 const MAX_TIME := 20.0
 const END_LINE_STOP := FIELD_LEN - 1.5 # receivers settle this deep in the end zone
+const TRAFFIC_RANGE := 1.2    # a free defender this close to a block he's heading into is squeezing through it...
+const TRAFFIC_SLOW := 0.75    # ...and moves at this fraction of his speed
 
 var dice: Dice
 var off_team: Team
@@ -886,8 +888,26 @@ func _move(a: SimActor) -> void:
 	if L < 0.05:
 		a.vel = Vector2.ZERO
 		return
+	if a.side == SimActor.Side.DEFENSE and in_traffic(a, to / L):
+		speed *= TRAFFIC_SLOW
 	a.vel = to / L * minf(speed, L / DT)
 	a.pos += a.vel * DT
+
+
+## Whether a free defender heading in direction dir is squeezing through a block: a teammate
+## engaged with a blocker, either of the two within TRAFFIC_RANGE and ahead of him. A blitz
+## through the middle of the line pays for it; one around the edge doesn't.
+func in_traffic(a: SimActor, dir: Vector2) -> bool:
+	if a.side != SimActor.Side.DEFENSE or not a.is_free():
+		return false
+	for d in defenders():
+		if d == a or d.engaged == null:
+			continue
+		for p in [d.pos, d.engaged.pos]:
+			var rel: Vector2 = p - a.pos
+			if rel.length() < TRAFFIC_RANGE and rel.dot(dir) > 0.0:
+				return true
+	return false
 
 
 func _desired(a: SimActor) -> Vector2:
