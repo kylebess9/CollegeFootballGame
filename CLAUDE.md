@@ -81,6 +81,8 @@ godot --headless --script res://tests/balance_test.gd
   Run Play): the highlighted route is the read the sim is on (`PlaySim.current_read()`), and the
   read clock (`PlaySim.read_clock()`) runs down the read_start wait, then each read. Run it after
   touching the QB's read logic in `play_sim.gd` or the read drawing in `field_view.gd`.
+- `tests/stock_formations_check.gd` — the stock playbook is legal and every offensive play runs against every
+  defensive call (including formations with no RB). Run it after adding or changing stock formations or plays.
 - `tests/redzone_check.gd` — regression test: scans every play for scoring/boundary bugs
   (a play ending in the end zone without being scored as a TD, a catch/interception recorded
   out of bounds). Extend this file's checks when you fix a new class of edge-case bug, so it

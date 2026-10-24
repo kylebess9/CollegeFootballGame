@@ -1121,7 +1121,8 @@ func _rush_target(d: SimActor) -> Vector2:
 
 
 func _bite_point(d: SimActor) -> Vector2:
-	var rb: SimActor = slots["O:RB"]
+	# Formations with no RB (Empty) have nobody to bite on, so the defender reads the QB.
+	var rb: SimActor = slots.get("O:RB", qb)
 	return Vector2(minf(rb.pos.x + 1.0, los + 1.0), rb.pos.y)
 
 

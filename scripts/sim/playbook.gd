@@ -311,12 +311,12 @@ static func make_defense(playbook_name: String) -> Playbook:
 
 ## Fresh copies of every stock offensive formation, each with its plays.
 static func offense_packages() -> Array[OffensiveFormation]:
-	return [_pistol()]
+	return [_pistol(), _shotgun(), _i_formation(), _singleback(), _empty()]
 
 
 ## Fresh copies of every stock defensive formation, each with its calls.
 static func defense_packages() -> Array[DefensiveFormation]:
-	return [_base_43(), _box_43()]
+	return [_base_43(), _box_43(), _nickel(), _dime(), _forty_six(), _goal_line(), _base_34()]
 
 
 static func _stock_kicks() -> Array[KickPlay]:
@@ -376,6 +376,161 @@ static func _pistol() -> OffensiveFormation:
 		7.0, 1.5, false,
 		{"WR1": route("dig"), "WR2": route("post"), "WR3": route("hitch"), "TE": route("out"), "RB": route("swing")},
 		[], ["WR1", "WR3", "TE", "RB"]))
+	return f
+
+
+## The five offensive linemen, lined up the same way in every formation.
+static func _offensive_line() -> Array[FormationSpot]:
+	var spots: Array[FormationSpot] = [
+		FormationSpot.make("C", "OL", Vector2(-0.6, 0.0)),
+		FormationSpot.make("LG", "OL", Vector2(-0.7, -1.4)),
+		FormationSpot.make("RG", "OL", Vector2(-0.7, 1.4)),
+		FormationSpot.make("LT", "OL", Vector2(-0.9, -2.8)),
+		FormationSpot.make("RT", "OL", Vector2(-0.9, 2.8)),
+	]
+	return spots
+
+
+## QB five yards behind the center, RB beside him, three receivers and a tight end.
+static func _shotgun() -> OffensiveFormation:
+	var spots := _offensive_line()
+	spots.append_array([
+		FormationSpot.make("TE", "TE", Vector2(-0.9, 4.3)),
+		FormationSpot.make("QB", "QB", Vector2(-5.0, 0.0)),
+		FormationSpot.make("RB", "RB", Vector2(-5.0, -2.2)),
+		FormationSpot.make("WR1", "WR", Vector2(-0.8, -13.0)),
+		FormationSpot.make("WR3", "WR", Vector2(-1.5, -6.0)),
+		FormationSpot.make("WR2", "WR", Vector2(-0.8, 15.0)),
+	])
+	var f := OffensiveFormation.make("Shotgun", spots)
+	f.add_play(RunPlay.make("Shotgun Draw",
+		"QB waits a beat, then hands off up the middle. The pass-happy look can catch a defense backing off.",
+		RunPlay.INSIDE))
+	f.add_play(RunPlay.make("Shotgun Sweep",
+		"Quick handoff to the edge out of the spread. Needs a fast back and receivers who can block corners.",
+		RunPlay.OUTSIDE))
+	f.add_play(PassPlay.make("Spread Slants",
+		"Quick 3-step throw to three crossing receivers. Gets the ball out before the rush arrives.",
+		4.5, 0.7, false,
+		{"WR1": route("slant"), "WR2": route("slant"), "WR3": route("slant"), "TE": route("flat")},
+		["RB"], ["WR3", "WR1", "WR2", "TE"]))
+	f.add_play(PassPlay.make("Spread Curls",
+		"Receivers sit down in the holes of a zone while the back swings out as a safety valve.",
+		5.0, 1.2, false,
+		{"WR1": route("curl"), "WR2": route("curl"), "WR3": route("out"), "TE": route("seam"), "RB": route("swing")},
+		[], ["WR1", "WR2", "WR3", "RB"]))
+	f.add_play(PassPlay.make("Shotgun Bombs",
+		"Everyone goes deep. Extra time in the pocket, but the line has to hold.",
+		5.5, 1.8, false,
+		{"WR1": route("go"), "WR2": route("go"), "WR3": route("seam"), "TE": route("seam")},
+		["RB"], ["WR1", "WR2", "WR3", "TE"]))
+	f.add_play(PassPlay.make("Shotgun PA Post",
+		"Fake the handoff from the gun, then throw the post. Linebackers with low Awareness bite.",
+		5.5, 2.0, true,
+		{"WR1": route("post"), "WR2": route("corner"), "WR3": route("dig"), "TE": route("flat")},
+		["RB"], ["WR1", "WR2", "WR3", "TE"]))
+	return f
+
+
+## QB under center with a fullback and tailback in a line behind him: power football.
+static func _i_formation() -> OffensiveFormation:
+	var spots := _offensive_line()
+	spots.append_array([
+		FormationSpot.make("TE", "TE", Vector2(-0.9, 4.3)),
+		FormationSpot.make("QB", "QB", Vector2(-1.6, 0.0)),
+		FormationSpot.make("FB", "RB", Vector2(-4.0, 0.0)),
+		FormationSpot.make("RB", "RB", Vector2(-6.5, 0.0)),
+		FormationSpot.make("WR1", "WR", Vector2(-0.8, -13.0)),
+		FormationSpot.make("WR2", "WR", Vector2(-1.5, 15.0)),
+	])
+	var f := OffensiveFormation.make("I-Formation", spots)
+	f.add_play(RunPlay.make("I Power",
+		"Fullback leads the tailback through the hole between the tackles.",
+		RunPlay.INSIDE))
+	f.add_play(RunPlay.make("I Toss",
+		"Pitch to the tailback running to the edge, with the fullback out in front.",
+		RunPlay.OUTSIDE))
+	f.add_play(PassPlay.make("I PA Boot",
+		"Fake the handoff to the tailback, then throw. Linebackers with low Awareness bite on the fake.",
+		6.0, 1.7, true,
+		{"WR1": route("post"), "WR2": route("corner"), "TE": route("flat"), "FB": route("flat")},
+		["RB"], ["WR1", "WR2", "TE", "FB"]))
+	f.add_play(PassPlay.make("I Hitches",
+		"Three-step throw to receivers who stop short of the sticks. Safe and short.",
+		4.5, 0.8, false,
+		{"WR1": route("hitch"), "WR2": route("hitch"), "TE": route("curl"), "FB": route("flat")},
+		["RB"], ["WR1", "WR2", "TE", "FB"]))
+	return f
+
+
+## One back behind the QB under center, two tight ends and two receivers: balanced.
+static func _singleback() -> OffensiveFormation:
+	var spots := _offensive_line()
+	spots.append_array([
+		FormationSpot.make("TE", "TE", Vector2(-0.9, 4.3)),
+		FormationSpot.make("TE2", "TE", Vector2(-0.9, -4.3)),
+		FormationSpot.make("QB", "QB", Vector2(-1.6, 0.0)),
+		FormationSpot.make("RB", "RB", Vector2(-5.5, 0.0)),
+		FormationSpot.make("WR1", "WR", Vector2(-0.8, -13.0)),
+		FormationSpot.make("WR2", "WR", Vector2(-0.8, 15.0)),
+	])
+	var f := OffensiveFormation.make("Singleback", spots)
+	f.add_play(RunPlay.make("Ace Zone",
+		"Handoff up the middle behind two tight ends who help the line.",
+		RunPlay.INSIDE))
+	f.add_play(RunPlay.make("Ace Stretch",
+		"Back takes the ball to the edge. Tight ends seal the outside.",
+		RunPlay.OUTSIDE))
+	f.add_play(PassPlay.make("Ace Curl Flat",
+		"Receivers curl in front of the safeties while the tight ends work the flats.",
+		6.0, 1.3, false,
+		{"WR1": route("curl"), "WR2": route("curl"), "TE": route("flat"), "TE2": route("flat")},
+		["RB"], ["WR1", "WR2", "TE", "TE2"]))
+	f.add_play(PassPlay.make("Ace Deep Cross",
+		"Receivers run deep, tight ends cut across the middle. Needs time in the pocket.",
+		7.0, 1.6, false,
+		{"WR1": route("post"), "WR2": route("corner"), "TE": route("dig"), "TE2": route("out"), "RB": route("swing")},
+		[], ["WR1", "WR2", "TE", "TE2"]))
+	f.add_play(PassPlay.make("Ace PA Seam",
+		"Fake the run with both tight ends in the game, then throw over the top.",
+		7.0, 2.0, true,
+		{"WR1": route("go"), "WR2": route("post"), "TE": route("seam"), "TE2": route("flat")},
+		["RB"], ["WR1", "WR2", "TE", "TE2"]))
+	return f
+
+
+## Five receivers and no back: maximum spread, nobody to help block.
+static func _empty() -> OffensiveFormation:
+	var spots := _offensive_line()
+	spots.append_array([
+		FormationSpot.make("TE", "TE", Vector2(-0.9, 4.3)),
+		FormationSpot.make("QB", "QB", Vector2(-5.0, 0.0)),
+		FormationSpot.make("WR1", "WR", Vector2(-0.8, -13.0)),
+		FormationSpot.make("WR3", "WR", Vector2(-1.5, -6.0)),
+		FormationSpot.make("WR2", "WR", Vector2(-0.8, 15.0)),
+		FormationSpot.make("WR4", "WR", Vector2(-1.5, 9.0)),
+	])
+	var f := OffensiveFormation.make("Empty", spots)
+	f.add_play(PassPlay.make("Empty Quick Game",
+		"Quick throws to five eligible receivers. Gets the ball out fast since nobody is in to block.",
+		4.0, 0.6, false,
+		{"WR1": route("slant"), "WR2": route("slant"), "WR3": route("hitch"), "WR4": route("hitch"), "TE": route("flat")},
+		[], ["WR3", "WR1", "WR4", "WR2", "TE"]))
+	f.add_play(PassPlay.make("Empty Curl Flat",
+		"Receivers sit down in the zone holes with the tight end working the flat.",
+		5.5, 1.2, false,
+		{"WR1": route("curl"), "WR2": route("curl"), "WR3": route("out"), "WR4": route("out"), "TE": route("flat")},
+		[], ["WR1", "WR2", "WR3", "WR4", "TE"]))
+	f.add_play(PassPlay.make("Empty Verticals",
+		"Everyone runs deep. Big plays if the QB has time; he is exposed with no back to block.",
+		6.0, 1.8, false,
+		{"WR1": route("go"), "WR2": route("go"), "WR3": route("seam"), "WR4": route("seam"), "TE": route("post")},
+		[], ["WR1", "WR2", "WR3", "WR4", "TE"]))
+	f.add_play(PassPlay.make("Empty Dig Cross",
+		"Crossing routes across the middle against a defense with nowhere to hide its coverage.",
+		5.5, 1.4, false,
+		{"WR1": route("dig"), "WR2": route("post"), "WR3": route("dig"), "WR4": route("corner"), "TE": route("out")},
+		[], ["WR1", "WR3", "WR2", "WR4", "TE"]))
 	return f
 
 
@@ -473,4 +628,251 @@ static func _box_43() -> DefensiveFormation:
 			CoverageAssignment.in_zone("MIKE", Zone.make("Hook Right", SH, R, 5, 0.075, 5)),
 			CoverageAssignment.in_zone("SAM", Zone.make("Curl Flat Right", SH, R, 5, 0.2625, 5)),
 		], true))
+	return f
+
+
+## Shorthands for the zones the extra formations' calls use.
+static func _z(zone_name: String, depth: int, spot: int, radius: float, width: float, yards: float) -> Zone:
+	return Zone.make(zone_name, depth, spot, radius, width, yards)
+
+
+## Four linemen, two linebackers and three corners: five defensive backs against three-receiver sets.
+static func _nickel() -> DefensiveFormation:
+	var spots: Array[FormationSpot] = [
+		FormationSpot.make("DE1", "DL", Vector2(1.0, -4.0)),
+		FormationSpot.make("DT1", "DL", Vector2(1.0, -1.0)),
+		FormationSpot.make("DT2", "DL", Vector2(1.0, 1.2)),
+		FormationSpot.make("DE2", "DL", Vector2(1.0, 3.7)),
+		FormationSpot.make("WILL", "LB", Vector2(5.0, -2.5)),
+		FormationSpot.make("MIKE", "LB", Vector2(5.0, 2.5)),
+		FormationSpot.make("CB1", "CB", Vector2(6.0, 0.0), "left_1"),
+		FormationSpot.make("CB2", "CB", Vector2(6.0, 0.0), "right_1"),
+		FormationSpot.make("CB3", "CB", Vector2(5.0, 0.0), "left_2"),
+		FormationSpot.make("SS", "S", Vector2(8.0, 4.0)),
+		FormationSpot.make("FS", "S", Vector2(13.0, 0.0)),
+	]
+	var f := DefensiveFormation.make("Nickel 4-2-5", spots)
+	var L := Zone.Spot.LEFT
+	var R := Zone.Spot.RIGHT
+	var C := Zone.Spot.CENTER
+	var SH := Zone.Depth.SHALLOW
+	var MID := Zone.Depth.INTERMEDIATE
+	var DP := Zone.Depth.DEEP
+	f.add_play(DefensivePlay.make("Nickel Cover 3",
+		"Three deep with the nickelback in the flat. Extra coverage with one fewer linebacker.", [
+			CoverageAssignment.in_zone("CB1", _z("Deep Third Left", DP, L, 9, 0.66, 17)),
+			CoverageAssignment.in_zone("CB2", _z("Deep Third Right", DP, R, 9, 0.66, 17)),
+			CoverageAssignment.in_zone("FS", _z("Deep Middle", DP, C, 10, 0.0, 19)),
+			CoverageAssignment.in_zone("CB3", _z("Curl Flat Left", SH, L, 6, 0.375, 6)),
+			CoverageAssignment.in_zone("SS", _z("Curl Flat Right", SH, R, 6, 0.375, 6)),
+			CoverageAssignment.in_zone("WILL", _z("Hook Left", MID, L, 5, 0.15, 7)),
+			CoverageAssignment.in_zone("MIKE", _z("Hook Right", MID, R, 5, 0.11, 7)),
+		]))
+	f.add_play(DefensivePlay.make("Nickel Man",
+		"Man coverage on every receiver, one deep safety. Three corners match up with three receivers.", [
+			CoverageAssignment.man("CB1"),
+			CoverageAssignment.man("CB2"),
+			CoverageAssignment.man("CB3"),
+			CoverageAssignment.man("SS"),
+			CoverageAssignment.man("WILL"),
+			CoverageAssignment.in_zone("MIKE", _z("Short Middle", SH, C, 6, 0.0, 6)),
+			CoverageAssignment.in_zone("FS", _z("Deep Middle", DP, C, 14, 0.0, 17)),
+		]))
+	f.add_play(DefensivePlay.make("Nickel Blitz",
+		"Both linebackers and the nickelback rush against man coverage. No safety help for the corners.", [
+			CoverageAssignment.man("CB1"),
+			CoverageAssignment.man("CB2"),
+			CoverageAssignment.man("SS"),
+			CoverageAssignment.man("FS"),
+			CoverageAssignment.blitz("CB3"),
+			CoverageAssignment.blitz("WILL"),
+			CoverageAssignment.blitz("MIKE"),
+		]))
+	return f
+
+
+## Four linemen, one linebacker and four corners: six defensive backs for obvious passing downs.
+static func _dime() -> DefensiveFormation:
+	var spots: Array[FormationSpot] = [
+		FormationSpot.make("DE1", "DL", Vector2(1.0, -4.0)),
+		FormationSpot.make("DT1", "DL", Vector2(1.0, -1.0)),
+		FormationSpot.make("DT2", "DL", Vector2(1.0, 1.2)),
+		FormationSpot.make("DE2", "DL", Vector2(1.0, 3.7)),
+		FormationSpot.make("MIKE", "LB", Vector2(5.0, 0.0)),
+		FormationSpot.make("CB1", "CB", Vector2(6.0, 0.0), "left_1"),
+		FormationSpot.make("CB2", "CB", Vector2(6.0, 0.0), "right_1"),
+		FormationSpot.make("CB3", "CB", Vector2(5.0, 0.0), "left_2"),
+		FormationSpot.make("CB4", "CB", Vector2(5.0, 0.0), "right_2"),
+		FormationSpot.make("SS", "S", Vector2(8.0, 3.0)),
+		FormationSpot.make("FS", "S", Vector2(13.0, 0.0)),
+	]
+	var f := DefensiveFormation.make("Dime 4-1-6", spots)
+	var L := Zone.Spot.LEFT
+	var R := Zone.Spot.RIGHT
+	var C := Zone.Spot.CENTER
+	var SH := Zone.Depth.SHALLOW
+	var MID := Zone.Depth.INTERMEDIATE
+	var DP := Zone.Depth.DEEP
+	f.add_play(DefensivePlay.make("Dime Quarters",
+		"Four deep defenders with the extra backs underneath. Hard to throw deep; the run is wide open.", [
+			CoverageAssignment.in_zone("CB1", _z("Deep Third Left", DP, L, 9, 0.66, 17)),
+			CoverageAssignment.in_zone("CB2", _z("Deep Third Right", DP, R, 9, 0.66, 17)),
+			CoverageAssignment.in_zone("SS", _z("Deep Half Right", DP, R, 11, 0.46, 17)),
+			CoverageAssignment.in_zone("FS", _z("Deep Half Left", DP, L, 11, 0.46, 17)),
+			CoverageAssignment.in_zone("CB3", _z("Flat Left", SH, L, 6, 0.74, 5)),
+			CoverageAssignment.in_zone("CB4", _z("Flat Right", SH, R, 6, 0.74, 5)),
+			CoverageAssignment.in_zone("MIKE", _z("Middle Hole", MID, C, 5, 0.0, 10)),
+		]))
+	f.add_play(DefensivePlay.make("Dime Man",
+		"Man coverage everywhere with one deep safety. Needs fast, aware defensive backs.", [
+			CoverageAssignment.man("CB1"),
+			CoverageAssignment.man("CB2"),
+			CoverageAssignment.man("CB3"),
+			CoverageAssignment.man("CB4"),
+			CoverageAssignment.man("SS"),
+			CoverageAssignment.in_zone("MIKE", _z("Short Middle", SH, C, 6, 0.0, 6)),
+			CoverageAssignment.in_zone("FS", _z("Deep Middle", DP, C, 14, 0.0, 17)),
+		]))
+	return f
+
+
+## Four linemen with the safeties and a linebacker on the line: six or seven players near the ball.
+static func _forty_six() -> DefensiveFormation:
+	var spots: Array[FormationSpot] = [
+		FormationSpot.make("DE1", "DL", Vector2(1.0, -4.0)),
+		FormationSpot.make("DT1", "DL", Vector2(1.0, -1.0)),
+		FormationSpot.make("DT2", "DL", Vector2(1.0, 1.2)),
+		FormationSpot.make("DE2", "DL", Vector2(1.0, 3.7)),
+		FormationSpot.make("WILL", "LB", Vector2(1.5, -2.5)),
+		FormationSpot.make("SS", "S", Vector2(1.5, 2.5)),
+		FormationSpot.make("MIKE", "LB", Vector2(4.5, 0.0)),
+		FormationSpot.make("SAM", "LB", Vector2(4.5, 5.0)),
+		FormationSpot.make("CB1", "CB", Vector2(6.0, 0.0), "left_1"),
+		FormationSpot.make("CB2", "CB", Vector2(6.0, 0.0), "right_1"),
+		FormationSpot.make("FS", "S", Vector2(13.0, 0.0)),
+	]
+	var f := DefensiveFormation.make("46", spots)
+	var L := Zone.Spot.LEFT
+	var R := Zone.Spot.RIGHT
+	var C := Zone.Spot.CENTER
+	var SH := Zone.Depth.SHALLOW
+	var DP := Zone.Depth.DEEP
+	f.add_play(DefensivePlay.make("46 Blitz",
+		"Five rushers off the line with man coverage behind. Immediate pressure up the middle; thin in the secondary.", [
+			CoverageAssignment.man("CB1"),
+			CoverageAssignment.man("CB2"),
+			CoverageAssignment.man("SAM"),
+			CoverageAssignment.in_zone("FS", _z("Deep Middle", DP, C, 14, 0.0, 17)),
+			CoverageAssignment.blitz("WILL"),
+			CoverageAssignment.blitz("SS"),
+			CoverageAssignment.blitz("MIKE"),
+		]))
+	f.add_play(DefensivePlay.make("46 Run Stuff",
+		"Eight in the box attack the line on the snap. Vulnerable to play action.", [
+			CoverageAssignment.in_zone("CB1", _z("Deep Third Left", DP, L, 9, 0.66, 15)),
+			CoverageAssignment.in_zone("CB2", _z("Deep Third Right", DP, R, 9, 0.66, 15)),
+			CoverageAssignment.in_zone("FS", _z("Deep Middle", DP, C, 11, 0.0, 16)),
+			CoverageAssignment.in_zone("SS", _z("Box Right", SH, R, 5, 0.225, 5)),
+			CoverageAssignment.in_zone("WILL", _z("Box Left", SH, L, 5, 0.15, 5)),
+			CoverageAssignment.in_zone("MIKE", _z("Hook Left", SH, C, 5, 0.075, 5)),
+			CoverageAssignment.in_zone("SAM", _z("Curl Flat Right", SH, R, 5, 0.2625, 5)),
+		], true))
+	return f
+
+
+## Five linemen and four linebackers with only two corners: stops short-yardage runs at the goal line.
+static func _goal_line() -> DefensiveFormation:
+	var spots: Array[FormationSpot] = [
+		FormationSpot.make("DE1", "DL", Vector2(1.0, -4.5)),
+		FormationSpot.make("DT1", "DL", Vector2(1.0, -2.3)),
+		FormationSpot.make("NT", "DL", Vector2(1.0, 0.0)),
+		FormationSpot.make("DT2", "DL", Vector2(1.0, 2.3)),
+		FormationSpot.make("DE2", "DL", Vector2(1.0, 4.5)),
+		FormationSpot.make("WILL", "LB", Vector2(3.0, -3.0)),
+		FormationSpot.make("MIKE", "LB", Vector2(3.0, -1.0)),
+		FormationSpot.make("SAM", "LB", Vector2(3.0, 1.0)),
+		FormationSpot.make("JACK", "LB", Vector2(3.0, 3.0)),
+		FormationSpot.make("CB1", "CB", Vector2(4.0, 0.0), "left_1"),
+		FormationSpot.make("CB2", "CB", Vector2(4.0, 0.0), "right_1"),
+	]
+	var f := DefensiveFormation.make("Goal Line 5-4-2", spots)
+	var L := Zone.Spot.LEFT
+	var R := Zone.Spot.RIGHT
+	var SH := Zone.Depth.SHALLOW
+	f.add_play(DefensivePlay.make("Goal Line Stand",
+		"Everyone attacks the line on the snap. Nearly unbeatable on the ground; any pass is wide open.", [
+			CoverageAssignment.in_zone("CB1", _z("Flat Left", SH, L, 5, 0.74, 5)),
+			CoverageAssignment.in_zone("CB2", _z("Flat Right", SH, R, 5, 0.74, 5)),
+			CoverageAssignment.in_zone("WILL", _z("Box Left", SH, L, 4, 0.15, 4)),
+			CoverageAssignment.in_zone("MIKE", _z("Box Left Middle", SH, L, 4, 0.075, 4)),
+			CoverageAssignment.in_zone("SAM", _z("Box Right Middle", SH, R, 4, 0.075, 4)),
+			CoverageAssignment.in_zone("JACK", _z("Box Right", SH, R, 4, 0.15, 4)),
+		], true))
+	f.add_play(DefensivePlay.make("Goal Line Man",
+		"Heavy front with the corners and linebackers locked on receivers. Guards against the quick pass.", [
+			CoverageAssignment.man("CB1"),
+			CoverageAssignment.man("CB2"),
+			CoverageAssignment.man("SAM"),
+			CoverageAssignment.man("JACK"),
+			CoverageAssignment.blitz("WILL"),
+			CoverageAssignment.blitz("MIKE"),
+		]))
+	return f
+
+
+## Three linemen and four linebackers: the outside linebackers rush or drop, so the front can disguise a blitz.
+static func _base_34() -> DefensiveFormation:
+	var spots: Array[FormationSpot] = [
+		FormationSpot.make("DE1", "DL", Vector2(1.0, -3.0)),
+		FormationSpot.make("NT", "DL", Vector2(1.0, 0.0)),
+		FormationSpot.make("DE2", "DL", Vector2(1.0, 3.0)),
+		FormationSpot.make("OLB1", "LB", Vector2(3.0, -5.0)),
+		FormationSpot.make("ILB1", "LB", Vector2(5.0, -1.8)),
+		FormationSpot.make("ILB2", "LB", Vector2(5.0, 1.8)),
+		FormationSpot.make("OLB2", "LB", Vector2(3.0, 5.0)),
+		FormationSpot.make("CB1", "CB", Vector2(6.0, 0.0), "left_1"),
+		FormationSpot.make("CB2", "CB", Vector2(6.0, 0.0), "right_1"),
+		FormationSpot.make("SS", "S", Vector2(8.0, 1.0)),
+		FormationSpot.make("FS", "S", Vector2(13.0, 0.0)),
+	]
+	var f := DefensiveFormation.make("3-4", spots)
+	var L := Zone.Spot.LEFT
+	var R := Zone.Spot.RIGHT
+	var C := Zone.Spot.CENTER
+	var SH := Zone.Depth.SHALLOW
+	var MID := Zone.Depth.INTERMEDIATE
+	var DP := Zone.Depth.DEEP
+	f.add_play(DefensivePlay.make("3-4 Cover 3",
+		"Three deep, four underneath, with the outside linebackers dropping to the flats.", [
+			CoverageAssignment.in_zone("CB1", _z("Deep Third Left", DP, L, 9, 0.66, 17)),
+			CoverageAssignment.in_zone("CB2", _z("Deep Third Right", DP, R, 9, 0.66, 17)),
+			CoverageAssignment.in_zone("FS", _z("Deep Middle", DP, C, 10, 0.0, 19)),
+			CoverageAssignment.in_zone("SS", _z("Hook Left", MID, L, 5, 0.15, 7)),
+			CoverageAssignment.in_zone("ILB1", _z("Hook Left Inside", MID, L, 5, 0.1, 7)),
+			CoverageAssignment.in_zone("ILB2", _z("Hook Right", MID, R, 5, 0.11, 7)),
+			CoverageAssignment.in_zone("OLB1", _z("Curl Flat Left", SH, L, 6, 0.375, 6)),
+			CoverageAssignment.in_zone("OLB2", _z("Curl Flat Right", SH, R, 6, 0.375, 6)),
+		]))
+	f.add_play(DefensivePlay.make("3-4 Zone Blitz",
+		"Both outside linebackers rush while the corners and safeties play zone. Disguises where the pressure comes from.", [
+			CoverageAssignment.in_zone("CB1", _z("Deep Third Left", DP, L, 9, 0.66, 17)),
+			CoverageAssignment.in_zone("CB2", _z("Deep Third Right", DP, R, 9, 0.66, 17)),
+			CoverageAssignment.in_zone("FS", _z("Deep Middle", DP, C, 10, 0.0, 19)),
+			CoverageAssignment.in_zone("SS", _z("Curl Flat Right", SH, R, 6, 0.375, 6)),
+			CoverageAssignment.in_zone("ILB1", _z("Hook Left", MID, L, 5, 0.15, 7)),
+			CoverageAssignment.in_zone("ILB2", _z("Middle Hole", MID, C, 5, 0.0, 10)),
+			CoverageAssignment.blitz("OLB1"),
+			CoverageAssignment.blitz("OLB2"),
+		]))
+	f.add_play(DefensivePlay.make("3-4 Man",
+		"Man coverage on every receiver with one deep safety. The inside linebackers cover backs and tight ends.", [
+			CoverageAssignment.man("CB1"),
+			CoverageAssignment.man("CB2"),
+			CoverageAssignment.man("SS"),
+			CoverageAssignment.man("OLB1"),
+			CoverageAssignment.man("OLB2"),
+			CoverageAssignment.in_zone("ILB1", _z("Short Middle", SH, C, 6, 0.0, 6)),
+			CoverageAssignment.blitz("ILB2"),
+			CoverageAssignment.in_zone("FS", _z("Deep Middle", DP, C, 14, 0.0, 17)),
+		]))
 	return f

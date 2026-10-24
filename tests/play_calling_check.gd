@@ -37,18 +37,18 @@ func _check_practice(stub: MainStub) -> void:
 	p.main = stub
 	stub.add_child(p)
 	await process_frame
-	_expect(p.state == "calling_off" and _texts(p) == ["Pistol"], "practice opens on the offense's formations: %s" % [_texts(p)])
+	_expect(p.state == "calling_off" and _texts(p) == ["Pistol", "Shotgun", "I-Formation", "Singleback", "Empty"], "practice opens on the offense's formations: %s" % [_texts(p)])
 	_press(p, "Pistol")
 	var plays := _texts(p)
 	_expect(plays.size() == 8 and plays[0] == "< Formations" and "Quick Slants" in plays, "picking Pistol lists its plays: %s" % [plays])
 	_hover(p, "Quick Slants")
 	_expect(p.field.preview and p.field.ghost_routes, "hovering a play draws its routes")
 	_press(p, "< Formations")
-	_expect(p.state == "calling_off" and _texts(p) == ["Pistol"], "back goes to the formation list")
+	_expect(p.state == "calling_off" and _texts(p) == ["Pistol", "Shotgun", "I-Formation", "Singleback", "Empty"], "back goes to the formation list")
 	_press(p, "Pistol")
 	_press(p, "Quick Slants")
 	_expect(p.state == "calling_def" and p.pending_off == "Quick Slants", "picking a play moves on to the defense")
-	_expect(_texts(p) == ["4-3", "4-3 Box", "< Change offense play"], "defense formations, with a way back: %s" % [_texts(p)])
+	_expect(_texts(p) == ["4-3", "4-3 Box", "Nickel 4-2-5", "Dime 4-1-6", "46", "Goal Line 5-4-2", "3-4", "< Change offense play"], "defense formations, with a way back: %s" % [_texts(p)])
 	_press(p, "4-3 Box")
 	_expect(_texts(p)[0] == "< Formations" and "Run Stuff" in _texts(p), "picking 4-3 Box lists its calls: %s" % [_texts(p)])
 	_hover(p, "Run Stuff")
@@ -56,7 +56,7 @@ func _check_practice(stub: MainStub) -> void:
 		"hovering a call keeps the offense's routes up and draws the coverage")
 	_press(p, "< Formations")
 	_press(p, "< Change offense play")
-	_expect(p.state == "calling_off" and p.pending_off == "" and _texts(p) == ["Pistol"], "the defense can send it back to the offense")
+	_expect(p.state == "calling_off" and p.pending_off == "" and _texts(p) == ["Pistol", "Shotgun", "I-Formation", "Singleback", "Empty"], "the defense can send it back to the offense")
 	_press(p, "Pistol")
 	_press(p, "Inside Run")
 	_press(p, "4-3")
@@ -102,7 +102,7 @@ func _check_match(stub: MainStub) -> void:
 	m.gs.down = 1
 	m._begin_snap()
 	_expect(m.pending_def != "", "CPU defense calls first")
-	_expect(_texts(m).size() == 3 and _texts(m)[0] == "Pistol" and _texts(m)[1] == "Punt" and _texts(m)[2].begins_with("Field Goal"),
+	_expect(_texts(m).size() == 7 and _texts(m)[0] == "Pistol" and _texts(m)[5] == "Punt" and _texts(m)[6].begins_with("Field Goal"),
 		"offense formations (skipping the empty one) and the kicks: %s" % [_texts(m)])
 	_expect(m.field.preview and m.field.hide_defense and not m.field.ghost_defense, "the defense is hidden while the offense calls")
 	_press(m, "Pistol")
@@ -127,7 +127,7 @@ func _check_match(stub: MainStub) -> void:
 	_expect(m.field.preview and not m.field.hide_defense and not m.field.ghost_routes, "the CPU offense lines up, its routes hidden")
 	_expect(m.field.sim.off_play.formation == off_play.formation, "the field shows the CPU offense's formation")
 	_expect(off_play.formation.name in m.call_title.text, "the title names the CPU's formation: %s" % m.call_title.text)
-	_expect(_texts(m) == ["4-3", "4-3 Box"], "defense formations: %s" % [_texts(m)])
+	_expect(_texts(m) == ["4-3", "4-3 Box", "Nickel 4-2-5", "Dime 4-1-6", "46", "Goal Line 5-4-2", "3-4"], "defense formations: %s" % [_texts(m)])
 	_press(m, "4-3")
 	_hover(m, "Blitz")
 	_expect(m.field.ghost_defense and not m.field.ghost_routes and m.field.sim.off_play == off_play,

@@ -22,11 +22,11 @@ func _initialize() -> void:
 	_expect(PlaybookStore.create(Playbook.OFFENSE).name == "Offensive Playbook #2", "second offensive playbook is #2")
 	_expect(off.validate().is_empty(), "new offensive playbook is legal: %s" % [off.validate()])
 	_expect(def.validate().is_empty(), "new defensive playbook is legal: %s" % [def.validate()])
-	_expect(off.offensive_formations.size() == 1 and off.offensive_formations[0].name == "Pistol"
-		and off.offensive_formations[0].plays.size() == 7, "offense starts with the Pistol package")
+	_expect(off.offensive_formations.size() == 5 and off.offensive_formations[0].name == "Pistol"
+		and off.offensive_formations[0].plays.size() == 7, "offense starts with every stock package, Pistol first")
 	_expect(off.defensive_formations.is_empty(), "offensive playbook has no defense")
 	var def_names := def.defensive_formations.map(func(f: DefensiveFormation) -> String: return f.name)
-	_expect(def_names == ["4-3", "4-3 Box"], "defense starts with both 4-3 packages")
+	_expect(def_names == ["4-3", "4-3 Box", "Nickel 4-2-5", "Dime 4-1-6", "46", "Goal Line 5-4-2", "3-4"], "defense starts with every stock package")
 
 	# New plays start legal.
 	var pistol: OffensiveFormation = off.offensive_formations[0]
