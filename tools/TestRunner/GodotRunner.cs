@@ -20,7 +20,8 @@ sealed partial class GodotRunner
 
     public sealed record RunOutput(List<string> Lines, int ExitCode, bool TimedOut, TimeSpan Duration);
 
-    public async Task<RunOutput> RunAsync(IEnumerable<string> args, TimeSpan timeout)
+    /// onLine is called with each output line as it arrives (from a background thread).
+    public async Task<RunOutput> RunAsync(IEnumerable<string> args, TimeSpan timeout, Action<string>? onLine = null)
     {
         var psi = new ProcessStartInfo(_godot)
         {
@@ -36,7 +37,9 @@ sealed partial class GodotRunner
         void Add(string? line)
         {
             if (line == null) return;
-            lock (lines) lines.Add(AnsiRegex().Replace(line, "").TrimEnd('\r'));
+            line = AnsiRegex().Replace(line, "").TrimEnd('\r');
+            lock (lines) lines.Add(line);
+            onLine?.Invoke(line);
         }
 
         var sw = Stopwatch.StartNew();
@@ -77,8 +80,8 @@ sealed partial class GodotRunner
         return new RunOutput(copy, timedOut ? -1 : proc.ExitCode, timedOut, sw.Elapsed);
     }
 
-    public Task<RunOutput> RunScriptAsync(TestCase test, TimeSpan timeout) =>
-        RunAsync(new[] { "--headless", "--path", _project, "--script", test.ResPath }, timeout);
+    public Task<RunOutput> RunScriptAsync(TestCase test, TimeSpan timeout, Action<string>? onLine = null) =>
+        RunAsync(new[] { "--headless", "--path", _project, "--script", test.ResPath }, timeout, onLine);
 
     public Task<RunOutput> ImportAsync(TimeSpan timeout) =>
         RunAsync(new[] { "--headless", "--path", _project, "--import" }, timeout);

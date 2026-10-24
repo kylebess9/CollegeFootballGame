@@ -18,6 +18,8 @@ static class HtmlReport
         TestStatus.Passed => ("pass", "Passed"),
         TestStatus.Failed => ("fail", "Failed"),
         TestStatus.Error => ("error", "Error"),
+        TestStatus.Running => ("running", "Running"),
+        TestStatus.Queued => ("queued", "Queued"),
         _ => ("report", "Report"),
     };
 
@@ -28,8 +30,13 @@ static class HtmlReport
         _ => "Report",
     };
 
-    public static string Build(IReadOnlyList<TestResult> results, RunInfo info)
+    /// live: the run is still going. The page then shows running and queued tests, the
+    /// output so far, and reloads itself every few seconds (keeping open rows and scroll).
+    public static string Build(IReadOnlyList<TestResult> results, RunInfo info, bool live = false)
     {
+        int running = results.Count(r => r.Status == TestStatus.Running);
+        int queued = results.Count(r => r.Status == TestStatus.Queued);
+        int done = results.Count - running - queued;
         int passed = results.Count(r => r.Status == TestStatus.Passed);
         int failed = results.Count(r => r.Status == TestStatus.Failed);
         int errors = results.Count(r => r.Status == TestStatus.Error);
@@ -43,20 +50,21 @@ static class HtmlReport
             <head>
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1">
+            {{(live ? "<meta http-equiv=\"refresh\" content=\"4\">" : "")}}
             <title>Test Results</title>
             <style>
             :root {
               --bg: #f6f7f9; --surface: #ffffff; --text: #1d2330; --muted: #5f6b7d; --border: #dde2ea;
               --pass: #1f7a3d; --pass-bg: #e3f4e8; --fail: #b42318; --fail-bg: #fde8e6;
               --error: #9a5b00; --error-bg: #fff1d6; --report: #2b5fa8; --report-bg: #e5eefb;
-              --code-bg: #f1f3f6; --fail-line: #fde8e6;
+              --code-bg: #f1f3f6; --fail-line: #fde8e6; --run: #6a3fb5; --run-bg: #efe7fb; --queued: #5f6b7d; --queued-bg: #eceff3;
             }
             @media (prefers-color-scheme: dark) {
               :root {
                 --bg: #12151b; --surface: #1b1f27; --text: #e6e9ef; --muted: #98a2b3; --border: #2c323d;
                 --pass: #5fd08a; --pass-bg: #173322; --fail: #ff7b6e; --fail-bg: #3a1a17;
                 --error: #f3b552; --error-bg: #382a12; --report: #7fb0ff; --report-bg: #182a45;
-                --code-bg: #14171d; --fail-line: #3a1a17;
+                --code-bg: #14171d; --fail-line: #3a1a17; --run: #c3a3ff; --run-bg: #2b2042; --queued: #98a2b3; --queued-bg: #252a33;
               }
             }
             * { box-sizing: border-box; }
@@ -71,7 +79,7 @@ static class HtmlReport
             .tile .n { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; }
             .tile .l { color: var(--muted); font-size: 13px; }
             .tile.pass .n { color: var(--pass); } .tile.fail .n { color: var(--fail); }
-            .tile.error .n { color: var(--error); } .tile.report .n { color: var(--report); }
+            .tile.error .n { color: var(--error); } .tile.report .n { color: var(--report); } .tile.running .n { color: var(--run); }
             .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
             .toolbar button { background: var(--surface); color: var(--text); border: 1px solid var(--border);
               border-radius: 8px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; }
@@ -87,7 +95,7 @@ static class HtmlReport
             .badge { text-align: center; border-radius: 999px; padding: 2px 8px; font-size: 12px; font-weight: 600; }
             .pass { color: var(--pass); background: var(--pass-bg); } .fail { color: var(--fail); background: var(--fail-bg); }
             .error { color: var(--error); background: var(--error-bg); } .report { color: var(--report); background: var(--report-bg); }
-            .tile.pass, .tile.fail, .tile.error, .tile.report { background: var(--surface); }
+            .tile.pass, .tile.fail, .tile.error, .tile.report, .tile.running { background: var(--surface); }
             .body { border-top: 1px solid var(--border); padding: 12px 14px; }
             .facts { color: var(--muted); font-size: 13px; margin-bottom: 8px; }
             .faillist { margin: 0 0 10px; padding-left: 18px; color: var(--fail); font-size: 13px; }
@@ -97,6 +105,12 @@ static class HtmlReport
             pre .f { background: var(--fail-line); color: var(--fail); font-weight: 600; }
             pre .o { color: var(--pass); }
             pre .e { color: var(--error); }
+            .running { color: var(--run); background: var(--run-bg); } .queued { color: var(--queued); background: var(--queued-bg); }
+            .verdict.running::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+              background: currentColor; margin-right: 6px; vertical-align: 1px; animation: pulse 1.2s ease-in-out infinite; }
+            @keyframes pulse { 50% { opacity: .25; } }
+            .bar { height: 6px; border-radius: 999px; background: var(--border); overflow: hidden; margin: -8px 0 20px; }
+            .bar div { height: 100%; background: var(--run); }
             .hidden { display: none; }
             @media (max-width: 640px) {
               .test summary { grid-template-columns: 70px minmax(0, 1fr) auto; }
@@ -106,9 +120,9 @@ static class HtmlReport
             </head>
             <body>
             <main>
-            <h1>Test results <span class="verdict {{(allGood ? "pass" : "fail")}}">{{(allGood ? "All checks passed" : $"{failed + errors} problem(s)")}}</span></h1>
+            <h1>Test results <span class="verdict {{(live ? "running" : allGood ? "pass" : "fail")}}">{{(live ? $"Running: {done} of {results.Count} done" + (failed + errors > 0 ? $", {failed + errors} problem(s)" : "") : allGood ? "All checks passed" : $"{failed + errors} problem(s)")}}</span></h1>
             <div class="meta">
-              {{H(info.Started.ToString("dddd d MMMM yyyy, HH:mm"))}} · took {{Secs(info.Duration)}} · {{info.Parallel}} at a time · {{H(info.Machine)}}<br>
+              {{H(info.Started.ToString("dddd d MMMM yyyy, HH:mm"))}} · {{(live ? $"running for {Secs(info.Duration)}, updated {DateTime.Now:HH:mm:ss}" : $"took {Secs(info.Duration)}")}} · {{info.Parallel}} at a time · {{H(info.Machine)}}<br>
               Godot {{H(info.GodotVersion)}} · {{H(info.GodotPath)}}<br>
               Project {{H(info.ProjectRoot)}}
             </div>
@@ -117,7 +131,9 @@ static class HtmlReport
               <div class="tile fail"><div class="n">{{failed}}</div><div class="l">Failed</div></div>
               <div class="tile error"><div class="n">{{errors}}</div><div class="l">Errors (crash, timeout, no summary)</div></div>
               <div class="tile report"><div class="n">{{reports}}</div><div class="l">Reports (no pass/fail)</div></div>
+            {{(live ? $"<div class=\"tile running\"><div class=\"n\">{running}</div><div class=\"l\">Running now ({queued} queued)</div></div>" : "")}}
             </div>
+            {{(live ? $"<div class=\"bar\"><div style=\"width:{(results.Count == 0 ? 0 : done * 100 / results.Count)}%\"></div></div>" : "")}}
             <div class="toolbar">
               <button type="button" id="onlyProblems" aria-pressed="false">Show only problems</button>
               <button type="button" id="expandAll">Expand all</button>
@@ -126,25 +142,46 @@ static class HtmlReport
 
             """);
 
-        // Problems first, then checks, then reports, each in name order.
+        // Running first, then problems, checks, reports and queued, each in name order.
         var ordered = results
-            .OrderBy(r => r.Status switch { TestStatus.Failed => 0, TestStatus.Error => 1, TestStatus.Passed => 2, _ => 3 })
+            .OrderBy(r => r.Status switch
+            {
+                TestStatus.Running => 0, TestStatus.Failed => 1, TestStatus.Error => 2,
+                TestStatus.Passed => 3, TestStatus.Report => 4, _ => 5,
+            })
             .ThenBy(r => r.Test.Name, StringComparer.OrdinalIgnoreCase);
 
         foreach (var r in ordered)
         {
             var (css, label) = Badge(r.Status);
             bool problem = r.Status is TestStatus.Failed or TestStatus.Error;
-            sb.Append($"""<details class="test" data-problem="{(problem ? "1" : "0")}"{(problem ? " open" : "")}>""");
+            bool isRunning = r.Status == TestStatus.Running;
+            List<string> output;
+            lock (r.Output) output = new List<string>(r.Output);
+            TimeSpan duration = isRunning ? DateTime.Now - (r.StartedAt ?? DateTime.Now) : r.Duration;
+            string detail = r.Status switch
+            {
+                TestStatus.Running => $"{output.Count} lines so far" + (output.LastOrDefault(l => l.Trim().Length > 0) is string last ? $" · {last.Trim()}" : ""),
+                TestStatus.Queued => "Waiting for a free slot",
+                _ => r.Detail,
+            };
+            sb.Append($"""<details class="test" id="t-{H(r.Test.Name)}" data-problem="{(problem ? "1" : "0")}" data-running="{(isRunning ? "1" : "0")}"{(problem || isRunning ? " open" : "")}>""");
             sb.Append($"""<summary><span class="badge {css}">{label}</span>""");
             sb.Append($"""<span class="name">{H(r.Test.Name)}<span class="kind">{KindLabel(r.Test.Kind)}</span></span>""");
-            sb.Append($"""<span class="detail">{H(r.Detail)}</span><span class="dur">{Secs(r.Duration)}</span></summary>""");
+            sb.Append($"""<span class="detail">{H(detail)}</span><span class="dur">{(r.Status == TestStatus.Queued ? "" : Secs(duration))}</span></summary>""");
             sb.Append("""<div class="body">""");
+            if (r.Status == TestStatus.Queued)
+            {
+                sb.Append("""<div class="facts">Not started yet. """ + H(r.Test.ResPath) + "</div></div></details>\n");
+                continue;
+            }
 
-            var facts = new List<string> { $"exit code {(r.TimedOut ? "n/a (timed out)" : r.ExitCode.ToString())}" };
-            if (r.Test.Kind != TestKind.Report) facts.Add($"{r.OkCount} ok line(s), {r.FailLines.Count} FAIL line(s)");
+            var facts = new List<string>();
+            if (isRunning) facts.Add($"started {r.StartedAt:HH:mm:ss}, still running");
+            else facts.Add($"exit code {(r.TimedOut ? "n/a (timed out)" : r.ExitCode.ToString())}");
+            if (r.Test.Kind != TestKind.Report && !isRunning) facts.Add($"{r.OkCount} ok line(s), {r.FailLines.Count} FAIL line(s)");
             if (r.ScriptErrors > 0) facts.Add($"{r.ScriptErrors} engine/script error line(s)");
-            facts.Add($"{r.Output.Count} output line(s)");
+            facts.Add($"{output.Count} output line(s)");
             facts.Add(H(r.Test.ResPath));
             sb.Append($"""<div class="facts">{string.Join(" · ", facts)}</div>""");
 
@@ -156,7 +193,7 @@ static class HtmlReport
             }
 
             sb.Append("<pre>");
-            foreach (string line in r.Output)
+            foreach (string line in output)
             {
                 string t = line.TrimStart();
                 string cls = t.StartsWith("FAIL", StringComparison.Ordinal) ? " class=\"f\""
@@ -166,7 +203,7 @@ static class HtmlReport
                     : "";
                 sb.Append($"<span{cls}>{(line.Length == 0 ? " " : H(line))}</span>");
             }
-            if (r.Output.Count == 0) sb.Append("<span>(no output)</span>");
+            if (output.Count == 0) sb.Append(isRunning ? "<span>(no output yet)</span>" : "<span>(no output)</span>");
             sb.Append("</pre></div></details>\n");
         }
 
@@ -175,6 +212,24 @@ static class HtmlReport
             <script>
             (function () {
               var tests = Array.prototype.slice.call(document.querySelectorAll('.test'));
+              // The live page reloads every few seconds; keep what the viewer opened, closed,
+              // filtered and scrolled to. Storage can be unavailable, so every use is guarded.
+              var KEY = 'testRunnerView:' + location.pathname;
+              var saved = null;
+              try { saved = JSON.parse(sessionStorage.getItem(KEY) || 'null'); } catch (e) {}
+              if (saved) {
+                tests.forEach(function (t) { if (t.id in saved.open) t.open = saved.open[t.id]; });
+              }
+              tests.forEach(function (t) {
+                if (t.dataset.running === '1') { var pre = t.querySelector('pre'); if (pre) pre.scrollTop = pre.scrollHeight; }
+              });
+              if (saved && saved.y) window.scrollTo(0, saved.y);
+              window.addEventListener('beforeunload', function () {
+                var open = {};
+                tests.forEach(function (t) { open[t.id] = t.open; });
+                var only = document.getElementById('onlyProblems').getAttribute('aria-pressed') === 'true';
+                try { sessionStorage.setItem(KEY, JSON.stringify({ open: open, only: only, y: window.scrollY })); } catch (e) {}
+              });
               var only = document.getElementById('onlyProblems');
               only.addEventListener('click', function () {
                 var on = only.getAttribute('aria-pressed') !== 'true';
@@ -183,6 +238,7 @@ static class HtmlReport
               });
               document.getElementById('expandAll').addEventListener('click', function () { tests.forEach(function (t) { t.open = true; }); });
               document.getElementById('collapseAll').addEventListener('click', function () { tests.forEach(function (t) { t.open = false; }); });
+              if (saved && saved.only) only.click();
             })();
             </script>
             </body>

@@ -17,6 +17,8 @@ sealed class Options
     public bool ForceImport;
     public bool NoImport;
     public bool ShowHelp;
+    public bool Verbose;
+    public int HeartbeatSeconds = 30;
     public List<string> Only = new();
     public List<string> Skip = new();
 
@@ -36,12 +38,18 @@ sealed class Options
           --timeout <sec>     Kill a test that runs longer than this (default 1800).
           --out <file.html>   Where to write the report (default:
                               tools/TestRunner/TestResults/test-report-<time>.html).
-          --open              Open the report in your browser when done.
+          --open              Open the report in your browser at the start. It refreshes
+                              itself while the tests run.
+          --verbose           Echo every line of test output to the console as it comes.
+          --heartbeat <sec>   Print what's still running this often (default 30, 0 = off).
           --import            Run 'godot --headless --import' first, even if the class
                               cache already exists (it runs automatically when missing).
           --no-import         Never run the import step.
           --config <file>     Read settings from this JSON file instead of testrunner.json.
           -h, --help          Show this help.
+
+        A log of the run (every output line, timestamped) is written next to the report
+        as it happens; tail it with: Get-Content <log> -Wait
 
         Exit code is 0 when every check passed, 1 when any failed or errored.
         """;
@@ -67,6 +75,8 @@ sealed class Options
                 case "--skip": o.Skip.AddRange(SplitList(Next())); break;
                 case "--checks-only": o.ChecksOnly = true; break;
                 case "--open": o.Open = true; break;
+                case "--verbose": o.Verbose = true; break;
+                case "--heartbeat": o.HeartbeatSeconds = ParseInt(a, Next(), 0); break;
                 case "--import": o.ForceImport = true; break;
                 case "--no-import": o.NoImport = true; break;
                 case "--parallel": o.Parallel = ParseInt(a, Next(), 1); break;
@@ -100,6 +110,8 @@ sealed class Options
         if (!Given("--parallel") && root.TryGetProperty("parallel", out var p)) Parallel = Math.Max(1, p.GetInt32());
         if (!Given("--checks-only") && root.TryGetProperty("checksOnly", out var c)) ChecksOnly = c.GetBoolean();
         if (!Given("--open") && root.TryGetProperty("open", out var op)) Open = op.GetBoolean();
+        if (!Given("--verbose") && root.TryGetProperty("verbose", out var v)) Verbose = v.GetBoolean();
+        if (!Given("--heartbeat") && root.TryGetProperty("heartbeatSeconds", out var hb)) HeartbeatSeconds = Math.Max(0, hb.GetInt32());
         if (root.TryGetProperty("skip", out var s) && s.ValueKind == JsonValueKind.Array)
             foreach (var e in s.EnumerateArray())
                 if (e.GetString() is { Length: > 0 } name) Skip.Add(name);

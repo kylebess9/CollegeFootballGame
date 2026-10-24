@@ -75,26 +75,41 @@ if (!opts.NoImport && (opts.ForceImport || !File.Exists(classCache)))
     Console.WriteLine(imp.TimedOut ? "  import timed out, carrying on" : $"  done in {imp.Duration.TotalSeconds:0}s");
 }
 
-Console.WriteLine($"Running {tests.Count} test(s), {opts.Parallel} at a time, timeout {opts.TimeoutSeconds}s each.");
-Console.WriteLine();
+string outPath = opts.OutputPath != null
+    ? Path.GetFullPath(opts.OutputPath)
+    : Path.Combine(projectRoot, "tools", "TestRunner", "TestResults", $"test-report-{DateTime.Now:yyyyMMdd-HHmmss}.html");
+string logPath = Path.ChangeExtension(outPath, ".log");
 
 var started = DateTime.Now;
 var total = Stopwatch.StartNew();
-var results = new TestResult[tests.Count];
-int finished = 0;
-using var gate = new SemaphoreSlim(opts.Parallel);
-var consoleLock = new object();
+var results = tests.Select(t => new TestResult { Test = t, Status = TestStatus.Queued }).ToArray();
+string BuildReport(bool live) => HtmlReport.Build(results, new HtmlReport.RunInfo(
+    started, total.Elapsed, godot, version, projectRoot, Environment.MachineName, opts.Parallel), live);
 
-await Task.WhenAll(tests.Select(async (test, i) =>
+using var progress = new Progress(results, outPath, logPath, BuildReport, opts.Verbose);
+progress.Log($"Godot {version} at {godot}; project {projectRoot}; {tests.Count} test(s), {opts.Parallel} at a time");
+progress.WriteReport(live: true);
+
+Console.WriteLine($"Running {tests.Count} test(s), {opts.Parallel} at a time, timeout {opts.TimeoutSeconds}s each.");
+Console.WriteLine($"Live report: {outPath}");
+Console.WriteLine($"Live log:    {logPath}");
+Console.WriteLine();
+if (opts.Open) OpenInBrowser(outPath);
+
+using var doneCts = new CancellationTokenSource();
+var ticker = progress.RunTickerAsync(opts.HeartbeatSeconds, doneCts.Token);
+using var gate = new SemaphoreSlim(opts.Parallel);
+
+await Task.WhenAll(results.Select(async r =>
 {
     await gate.WaitAsync();
     try
     {
-        var r = new TestResult { Test = test };
+        progress.Started(r);
         try
         {
-            var run = await runner.RunScriptAsync(test, TimeSpan.FromSeconds(opts.TimeoutSeconds));
-            r.Output = run.Lines;
+            var run = await runner.RunScriptAsync(r.Test, TimeSpan.FromSeconds(opts.TimeoutSeconds),
+                line => progress.Line(r, line));
             r.ExitCode = run.ExitCode;
             r.TimedOut = run.TimedOut;
             r.Duration = run.Duration;
@@ -104,26 +119,9 @@ await Task.WhenAll(tests.Select(async (test, i) =>
         {
             r.Status = TestStatus.Error;
             r.Detail = ex.Message;
+            r.Duration = DateTime.Now - r.StartedAt!.Value;
         }
-        results[i] = r;
-        lock (consoleLock)
-        {
-            finished++;
-            var old = Console.ForegroundColor;
-            Console.Write($"[{finished,2}/{tests.Count}] {test.Name,-28} ");
-            Console.ForegroundColor = r.Status switch
-            {
-                TestStatus.Passed => ConsoleColor.Green,
-                TestStatus.Failed => ConsoleColor.Red,
-                TestStatus.Error => ConsoleColor.Yellow,
-                _ => ConsoleColor.Cyan,
-            };
-            Console.Write(StatusLabel(r.Status).PadRight(7));
-            Console.ForegroundColor = old;
-            Console.WriteLine($" {r.Duration.TotalSeconds,6:0.0}s  {r.Detail}");
-            foreach (string f in r.FailLines.Take(5)) Console.WriteLine($"        {f}");
-            if (r.FailLines.Count > 5) Console.WriteLine($"        ... and {r.FailLines.Count - 5} more");
-        }
+        progress.Finished(r);
     }
     finally
     {
@@ -131,13 +129,9 @@ await Task.WhenAll(tests.Select(async (test, i) =>
     }
 }));
 total.Stop();
-
-string outPath = opts.OutputPath != null
-    ? Path.GetFullPath(opts.OutputPath)
-    : Path.Combine(projectRoot, "tools", "TestRunner", "TestResults", $"test-report-{started:yyyyMMdd-HHmmss}.html");
-Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
-File.WriteAllText(outPath, HtmlReport.Build(results, new HtmlReport.RunInfo(
-    started, total.Elapsed, godot, version, projectRoot, Environment.MachineName, opts.Parallel)));
+doneCts.Cancel();
+await ticker;
+progress.WriteReport(live: false);
 
 int passed = results.Count(r => r.Status == TestStatus.Passed);
 int failed = results.Count(r => r.Status == TestStatus.Failed);
@@ -146,22 +140,16 @@ int reports = results.Count(r => r.Status == TestStatus.Report);
 Console.WriteLine();
 Console.WriteLine($"{passed} passed, {failed} failed, {errors} errors, {reports} reports in {total.Elapsed:hh\\:mm\\:ss}");
 Console.WriteLine($"Report: {outPath}");
+Console.WriteLine($"Log:    {logPath}");
 
-if (opts.Open)
-{
-    try { Process.Start(new ProcessStartInfo(outPath) { UseShellExecute = true }); }
-    catch (Exception ex) { Console.Error.WriteLine($"Couldn't open the report: {ex.Message}"); }
-}
 
 return failed + errors > 0 ? 1 : 0;
 
-static string StatusLabel(TestStatus s) => s switch
+static void OpenInBrowser(string path)
 {
-    TestStatus.Passed => "PASS",
-    TestStatus.Failed => "FAIL",
-    TestStatus.Error => "ERROR",
-    _ => "REPORT",
-};
+    try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); }
+    catch (Exception ex) { Console.Error.WriteLine($"Couldn't open the report: {ex.Message}"); }
+}
 
 static string? FindProjectRoot(string start)
 {

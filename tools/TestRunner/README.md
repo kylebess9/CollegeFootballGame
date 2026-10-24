@@ -30,9 +30,9 @@ From the repo folder (the one with `project.godot`), in PowerShell:
 dotnet run --project tools\TestRunner -- --open
 ```
 
-Everything after `--` goes to the runner. That runs every test, one at a time, prints a line per
-test as it finishes, writes the report to
-`tools\TestRunner\TestResults\test-report-<date>-<time>.html` and, with `--open`, opens it.
+Everything after `--` goes to the runner. That runs every test, one at a time, and writes the
+report to `tools\TestRunner\TestResults\test-report-<date>-<time>.html`. With `--open` the report
+opens in your browser straight away and follows the run live (see below).
 
 Some handy variations:
 
@@ -54,6 +54,31 @@ If the project has never been imported (no `.godot\global_script_class_cache.cfg
 runs `godot --headless --import` first, since without the class cache every test fails with
 "Identifier not declared". `--import` forces that step, `--no-import` skips it.
 
+## Watching it run
+
+The tests are slow (`balance_test` alone can take 15+ minutes), so there are three ways to see that
+it's working and how far it has got:
+
+- **The console** prints a line when each test starts and when it finishes (with its result), and
+  every 30 seconds a status line naming each running test, how long it has run, how many lines it
+  has printed and its latest one. `--heartbeat 10` makes that more often, `--heartbeat 0` turns it
+  off. `--verbose` also echoes every line of test output as it arrives.
+- **The live report.** The HTML report is written as soon as the run starts and rewritten every few
+  seconds. While the run is going it shows a progress bar, the tests running now with their output
+  so far (scrolled to the newest line), the finished results, and the ones still queued; the page
+  reloads itself every 4 seconds and keeps what you had opened and where you'd scrolled. When the
+  run ends it becomes the normal final report and stops reloading.
+- **The log file**, `test-report-<date>-<time>.log` next to the report: every line of every test's
+  output, timestamped and tagged with the test's name, plus start, finish and status lines. Watch it
+  from a second PowerShell window with:
+  ```powershell
+  Get-Content tools\TestRunner\TestResults\test-report-<date>-<time>.log -Wait
+  ```
+
+Godot prints its output in bursts when it isn't writing to a terminal, so a test can go quiet for a
+minute and then show several lines at once; the running time in the status line keeps ticking either
+way.
+
 ### All the options
 
 | Option | What it does |
@@ -66,12 +91,14 @@ runs `godot --headless --import` first, since without the class cache every test
 | `--parallel <n>` | Run n tests at once (default 1) |
 | `--timeout <sec>` | Stop a test that runs longer than this (default 1800) |
 | `--out <file.html>` | Where to write the report |
-| `--open` | Open the report when done |
+| `--open` | Open the report at the start; it updates live while the tests run |
+| `--verbose` | Echo every line of test output to the console |
+| `--heartbeat <sec>` | How often to print the "still running" status line (default 30, 0 = off) |
 | `--import` / `--no-import` | Always / never run the import step first |
 | `--config <file>` | Use this JSON file instead of `testrunner.json` |
 
-`testrunner.json` can also set `timeoutSeconds`, `parallel`, `checksOnly`, `open` and a `skip`
-list; command-line options override it.
+`testrunner.json` can also set `timeoutSeconds`, `parallel`, `checksOnly`, `open`, `verbose`,
+`heartbeatSeconds` and a `skip` list; command-line options override it.
 
 ## How pass/fail is decided
 
