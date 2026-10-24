@@ -42,7 +42,8 @@ const FAKE_READ_DEPTH := 10.0 # safeties lined up shallower than this read play-
 const OPEN_THRESHOLD := 1.8
 const MIN_SCRAMBLE_SPEED := 3 # a QB with at least this Speed is a playmaker: he rolls out of a threatened pocket. Slower ones stand and throw
 const THREAT_RANGE := 3.5     # a free rusher this close has the QB's attention (before he's actually pressured)
-const QB_THREAT_CHECK_INTERVAL := 0.6 # interval in which the QB assesses potential rushing threats
+const QB_THREAT_CHECK_INTERVAL := 0.2 # interval in which the QB assesses potential rushing threats
+const THREAT_SPOT_TARGET := 7 # at each check he picks up a rusher in range on a (THREAT_SPOT_TARGET - Awareness)+ roll
 const ROLLOUT_READ_DELAY := 1.2 # initial delay before a scrambling QB will look downfield: no throws or reads until then
 const ROLLOUT_MIN_TIME := 0.7 # ...but not before the line has had a moment to engage
 const PANIC_OPEN_BASE := -0.6 # a threatened pocket QB throws to anyone with at least this much room, plus...
@@ -583,14 +584,19 @@ func _reads_fake(d: SimActor) -> bool:
 # ---------------------------------------------------------------- QB decisions
 
 func _qb_decide() -> void:
-	# He only looks at the rush every QB_THREAT_CHECK_INTERVAL, and acts on what he saw then.
-	var checking := t >= threat_checked_at + QB_THREAT_CHECK_INTERVAL
-	if checking:
+	# He only looks at the rush every QB_THREAT_CHECK_INTERVAL, and even then he has to pick the
+	# rusher up: a low-Awareness QB keeps reading with a free man closing on him.
+	var threatened := false
+	var spot_detail := ""
+	if t >= threat_checked_at + QB_THREAT_CHECK_INTERVAL:
 		threat_checked_at = t
 		var threat := _nearest_free_opponent(qb)
 		threat_dist = INF if threat == null else threat.pos.distance_to(qb.pos)
 		under_pressure = threat_dist < 1.3 + 0.3 * qb.r("awr")
-	var threatened := checking and threat_dist < THREAT_RANGE and t >= ROLLOUT_MIN_TIME
+		if threat_dist < THREAT_RANGE and t >= ROLLOUT_MIN_TIME:
+			var res := _test(qb, THREAT_SPOT_TARGET - qb.r("awr"), "Spot the rush (Awareness)")
+			threatened = res["ok"]
+			spot_detail = str(res["detail"])
 
 	if qb_state == "drop":
 		if qb.pos.distance_to(qb_set) < 0.4 and t >= pass_play.read_start:
@@ -606,16 +612,16 @@ func _qb_decide() -> void:
 	if threatened:
 		if qb.r("spd") >= MIN_SCRAMBLE_SPEED:
 			# A playmaker gets off the spot and looks for a play on the move.
-			_start_rollout(_rollout_side())
+			_start_rollout(_rollout_side(), spot_detail)
 			return
 		# A pocket QB stands in and takes a tighter window instead, the slower the tighter.
 		var best := _best_option(25.0)
 		if best["actor"] != null and float(best["open"]) >= _panic_open():
-			_log("QB feels the rush and gets it out", qb.pos, -1)
+			_log("QB feels the rush and gets it out", qb.pos, -1, spot_detail)
 			_throw(best["actor"], true)
 			return
 		if under_pressure:
-			_throw_away("Nowhere to go (Speed %d)" % qb.r("spd"))
+			_throw_away("%s; nowhere to go (Speed %d)" % [spot_detail, qb.r("spd")])
 			return
 
 	if qb_state != "read":
@@ -716,7 +722,7 @@ func _rollout_side() -> float:
 	return side
 
 
-func _start_rollout(side: float) -> void:
+func _start_rollout(side: float, detail: String = "") -> void:
 	qb_state = "rollout"
 	roll_side = side
 	roll_dir = Vector2(0.0, side)
@@ -728,7 +734,7 @@ func _start_rollout(side: float) -> void:
 	roll_started = t
 	rollout_reading = false
 	qb.job = "rollout"
-	_log("%s slides away from the rush" % qb.tag(), qb.pos, -1, "", "Rolls out")
+	_log("%s slides away from the rush" % qb.tag(), qb.pos, -1, detail, "Rolls out")
 
 
 func _start_read(i: int) -> void:

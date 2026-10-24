@@ -5,7 +5,8 @@ extends SceneTree
 ##   within PlaySim.THREAT_RANGE, and never drifts up toward the line while doing it,
 ## - a slower QB never leaves the spot and never tucks and runs: he stands in and takes a tighter
 ##   window (_panic_open, under OPEN_THRESHOLD) or throws it away,
-## - he assesses the rush only every PlaySim.QB_THREAT_CHECK_INTERVAL,
+## - he assesses the rush only every PlaySim.QB_THREAT_CHECK_INTERVAL, and has to roll Awareness
+##   to pick a rusher up at all, so a low-Awareness QB reacts later,
 ## - he runs heads-down for PlaySim.ROLLOUT_READ_DELAY after committing: no read, no clock, no throw,
 ## - a rolling QB wants more room than OPEN_THRESHOLD before he throws, and tucks it and runs out
 ##   of the pocket when nobody has that much,
@@ -26,6 +27,36 @@ func _set_qb_speed(team: Team, spd: int) -> void:
 	for p in team.roster:
 		if p.position == "QB":
 			p.ratings["spd"] = spd
+
+
+func _set_qb_awareness(team: Team, awr: int) -> void:
+	for p in team.roster:
+		if p.position == "QB":
+			p.ratings["awr"] = awr
+			p.skills.erase("Field General") # the read-speed skill would muddy the comparison
+
+
+## Average time from the snap to the rollout, over every pass play in the book.
+func _avg_rollout_time(a: Team, b: Team, pb: Playbook) -> float:
+	var total := 0.0
+	var rolls := 0
+	for rep in 120:
+		for play in pb.offense_plays():
+			if not play is PassPlay:
+				continue
+			var sim := PlaySim.new()
+			sim.setup(a, b, play, pb.defense_plays()[rep % pb.defense_plays().size()], 30.0, 26.6,
+				{"down": 1, "to_go": 10}, Dice.new(rep * 17 + 3))
+			var guard := 0
+			while not sim.done and guard < 900:
+				sim.step()
+				guard += 1
+				if sim.qb_state == "rollout":
+					total += sim.t
+					rolls += 1
+					break
+			sim.dispose()
+	return 99.0 if rolls == 0 else total / float(rolls)
 
 
 func _initialize() -> void:
@@ -111,6 +142,15 @@ func _initialize() -> void:
 	_expect(max_forward < 0.5, "and he never drifts up toward the line (most forward: %.2f yds)" % max_forward)
 	_expect(ends.size() > 1, "a rollout ends more than one way (throw, run, sack...)")
 	_expect(with_run > 0, "rollout throws are made on the run")
+
+	# Awareness decides how fast he picks the rush up, so a sharp QB is off the spot sooner.
+	_set_qb_speed(a, PlaySim.MIN_SCRAMBLE_SPEED + 1)
+	_set_qb_awareness(a, 1)
+	var slow_eyes := _avg_rollout_time(a, b, pb)
+	_set_qb_awareness(a, 6)
+	var quick_eyes := _avg_rollout_time(a, b, pb)
+	print("  average time to the rollout: Awareness 1 %.2fs, Awareness 6 %.2fs" % [slow_eyes, quick_eyes])
+	_expect(quick_eyes < slow_eyes, "a sharper QB picks the rush up sooner")
 
 	# Throwing back across the run: forced, so it doesn't depend on how the rollouts fall.
 	var flagged := {}
