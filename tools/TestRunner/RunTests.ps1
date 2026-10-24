@@ -1,0 +1,1 @@
+dotnet run --project ../TestRunner -- --godot godot.exe --open
