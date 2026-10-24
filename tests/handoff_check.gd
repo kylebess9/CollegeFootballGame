@@ -45,7 +45,7 @@ func _init() -> void:
 			handoffs += _count(sim, "takes the handoff")
 			pitches += _count(sim, "pitches it")
 			sim.dispose()
-	_expect(handoffs == 300 and pitches == 0, "Inside Run is always a handoff (%d handoffs, %d pitches)" % [handoffs, pitches])
+	_expect(handoffs == defense.size() * 60 and pitches == 0, "Inside Run is always a handoff (%d handoffs, %d pitches)" % [handoffs, pitches])
 
 	# The same run with no time to get there: always a pitch. The RB is still coming forward
 	# past the QB, so the pitch goes slightly forward and a drop is just incomplete.
@@ -100,8 +100,8 @@ func _init() -> void:
 			if r["thrown"] or not r["kind"] in ["tackle", "oob", "td", "safety", "fumble", "def_td", "int", "sack"]:
 				bad += 1
 			sim.dispose()
-	print("    Toss: 2000 plays, %d sacks first, %d pitches, %d caught, %d dropped (2+ with a re-roll misses 2.8%%)" % [sacks, n, caught, drops])
-	_expect(n + sacks == 2000, "a run where the RB can't reach the QB is a pitch")
+	print("    Toss: %d plays, %d sacks first, %d pitches, %d caught, %d dropped (2+ with a re-roll misses 2.8%%)" % [defense.size() * 400, sacks, n, caught, drops])
+	_expect(n + sacks == defense.size() * 400, "a run where the RB can't reach the QB is a pitch")
 	_expect(drops > 0 and float(drops) / n < 0.08, "a pitch is almost always caught, but not always")
 	print("    dropped pitches end as %s" % kinds)
 	_expect(fumbles == drops, "every dropped backward pitch is a fumble")
