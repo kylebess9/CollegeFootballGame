@@ -12,7 +12,7 @@ enum TestKind
     Report,
 }
 
-enum TestStatus { Passed, Failed, Error, Report }
+enum TestStatus { Passed, Failed, Error, Report, Queued, Running }
 
 sealed record TestCase(string Name, string File, TestKind Kind)
 {
@@ -25,7 +25,9 @@ sealed class TestResult
     public TestStatus Status;
     /// One line for the report table: the summary line, or why it failed.
     public string Detail = "";
+    /// Filled line by line while the test runs; lock on it to read it then.
     public List<string> Output = new();
+    public DateTime? StartedAt;
     public int ExitCode;
     public bool TimedOut;
     public TimeSpan Duration;
