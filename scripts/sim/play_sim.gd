@@ -43,7 +43,10 @@ const OPEN_THRESHOLD := 1.8
 const MIN_SCRAMBLE_SPEED := 3 # out of the pocket, a QB with at least this Speed keeps going: he throws or runs. Slower ones throw it away
 const ROLLOUT_TRIGGER := 3.5  # a QB starts rolling out when a free rusher gets this close (before he's actually pressured)
 const ROLLOUT_MIN_TIME := 0.7 # ...but not before the line has had a moment to engage
-const PANIC_OPEN := 0.3       # a rolling QB throws to anyone with at least this much room (OPEN_THRESHOLD otherwise)
+const PANIC_OPEN_BASE := -0.6 # a rolling QB throws to anyone with at least this much room, plus...
+const PANIC_OPEN_PER_SPD := 0.3 # ...this per point of Speed (a slower QB panics more; OPEN_THRESHOLD otherwise)
+const ROLLOUT_BURST := 1.3    # he leaves the pocket at this multiple of his rollout speed...
+const ROLLOUT_BURST_TIME := 0.6 # ...for this long
 const ROLLOUT_SPEED := 0.85   # he rolls out at this fraction of his top speed
 const POCKET_HALF_WIDTH := 5.0 # past this far from the spot of the ball, he's out of the pocket
 const FAST_ROLLOUT_LOOK := 1.2 # a fast QB rolls on this long past the pocket, looking for a throw, before he must decide
@@ -116,6 +119,7 @@ var threw_back := false # the last pass was thrown back across the QB's run
 var pending_move := Vector2.ZERO # the QB's velocity when he let it go, for throwing on the run
 var roll_side := 1.0 # which sideline a rolling QB heads for (+1 or -1 in y)
 var roll_dir := Vector2(0.0, 1.0) # the way he runs: away from the rusher, never up toward the line
+var roll_started := 0.0 # when the rollout began
 var roll_out_at := -1.0 # when the rolling QB got outside the pocket
 
 
@@ -629,7 +633,7 @@ func _qb_decide() -> void:
 
 
 ## The QB on the move with the ball, still reading. He's panicked: he throws to anyone with even
-## a little room (PANIC_OPEN), pressured and moving away penalties and all. Once he's out of the
+## a little room (a slower QB needs less), pressured and moving away penalties and all. Once he's out of the
 ## pocket the speed check applies: a slower QB throws it away if the rush is still on him; a
 ## faster one tucks it and runs if there's a lane and nobody is clearly open, else rolls on a
 ## little longer and then throws it away.
@@ -645,7 +649,7 @@ func _rollout_decide() -> void:
 		# Out of the pocket with room to run and nobody clearly open: he takes off.
 		_start_scramble("Speed %d" % qb.r("spd"))
 		return
-	if open >= PANIC_OPEN:
+	if open >= PANIC_OPEN_BASE + PANIC_OPEN_PER_SPD * qb.r("spd"):
 		_throw(best["actor"], true)
 		return
 	var threat := _nearest_free_opponent(qb)
@@ -692,6 +696,7 @@ func _start_rollout(side: float) -> void:
 		var away := (qb.pos - threat.pos).normalized()
 		roll_dir = Vector2(minf(away.x, 0.0) * 0.6, side).normalized()
 	roll_out_at = -1.0
+	roll_started = t
 	qb.job = "rollout"
 	_log("%s slides away from the rush" % qb.tag(), qb.pos, -1, "", "Rolls out")
 	_start_read(0)
@@ -986,7 +991,7 @@ func _move(a: SimActor) -> void:
 	if a.job == "block" and holder == qb and not is_run:
 		speed *= 0.7
 	elif a.job == "rollout":
-		speed *= ROLLOUT_SPEED
+		speed *= ROLLOUT_SPEED * (ROLLOUT_BURST if t < roll_started + ROLLOUT_BURST_TIME else 1.0)
 	var to := target - a.pos
 	var L := to.length()
 	if L < 0.05:
